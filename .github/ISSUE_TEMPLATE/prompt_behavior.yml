@@ -1,0 +1,45 @@
+name: Prompt behavior change
+description: Propose or report a coding-agent behavior that the prompt should cover.
+title: "[Behavior]: "
+labels: ["prompt", "eval-needed"]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Desired behavior
+      description: What should the agent do?
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Example scenario
+      description: Describe the user request, repository state, and expected agent response.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior
+      description: What does the current prompt or eval suite miss?
+    validations:
+      required: false
+  - type: dropdown
+    id: target
+    attributes:
+      label: Observed target
+      options:
+        - Pi
+        - OpenCode
+        - Both
+        - Not target-specific
+        - Not tested
+    validations:
+      required: true
+  - type: textarea
+    id: eval
+    attributes:
+      label: Suggested eval coverage
+      description: If known, describe the eval that would catch this behavior.
+    validations:
+      required: false

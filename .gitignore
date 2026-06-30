@@ -1,0 +1,34 @@
+# IntelliJ project files
+.idea/
+*.iml
+out
+gen
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+.DS_Store
+
+# LLM related
+.pi/
+.opencode/
+.codex/
+evals/reports/
+!evals/reports/
+evals/reports/*
+!evals/reports/local-pi/
+evals/reports/local-pi/**
+!evals/reports/local-pi/report.json
+!evals/reports/local-pi/report.html
+!evals/reports/local-opencode-gpt55/
+evals/reports/local-opencode-gpt55/**
+!evals/reports/local-opencode-gpt55/report.json
+!evals/reports/local-opencode-gpt55/report.html
+evals/reports-experimental/
+evals/poc/.venv
+evals/poc/node_modules
+logs/
