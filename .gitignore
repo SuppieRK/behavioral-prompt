@@ -28,6 +28,10 @@ evals/reports/local-pi/**
 evals/reports/local-opencode-gpt55/**
 !evals/reports/local-opencode-gpt55/report.json
 !evals/reports/local-opencode-gpt55/report.html
+!evals/reports/local-codex-gpt55/
+evals/reports/local-codex-gpt55/**
+!evals/reports/local-codex-gpt55/report.json
+!evals/reports/local-codex-gpt55/report.html
 evals/reports-experimental/
 evals/poc/.venv
 evals/poc/node_modules
