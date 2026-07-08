@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+import html
+import json
+from typing import Any
+
+
+REPORT_EMBED_MARKER = "window.__PROMPT_EVAL_REPORT__"
+
+STATUS_ORDER = {"harness_error": 0, "fail": 1, "not_evaluated": 2, "pass": 3}
+STATUS_LABELS = {"harness_error": "Harness Error", "not_evaluated": "Not Evaluated"}
+
+
+def render_html(report: dict[str, Any]) -> str:
+    title = _escape(report.get("title", "Prompt Eval Report"))
+    embedded = json.dumps(report, sort_keys=True).replace("<", "\\u003c")
+    groups = _case_groups(report)
+    body = "".join(_render_case_group(group) for group in groups)
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>{title}</title>
+  <style>{_css()}</style>
+</head>
+<body>
+  <header class='page-header'>
+    <div>
+      <p class='eyebrow'>{_escape(report.get('schema_version', 'eval report'))}</p>
+      <h1>{title}</h1>
+      {_render_prompt_meta(report)}
+    </div>
+    {_render_promotion(report.get('promotion', {}))}
+  </header>
+  <section class='summary-band' aria-label='Summary'>
+    {_render_status_cards(report.get('status_counts', report.get('summary', {})))}
+  </section>
+  {_render_metrics(report.get('metrics', {}), report.get('promotion', {}))}
+  <main id='result-list' class='case-list'>{body or "<p class='empty'>No case results in this report.</p>"}</main>
+  <details class='raw-report'><summary>Raw report JSON</summary><pre>{_escape(json.dumps(report, indent=2, sort_keys=True))}</pre></details>
+  <script type='application/json' id='report'>{embedded}</script>
+  <script>{REPORT_EMBED_MARKER} = JSON.parse(document.getElementById('report').textContent);</script>
+</body>
+</html>"""
+
+
+def _css() -> str:
+    return """
+:root { color-scheme: light; --bg:#f6f8fa; --panel:#fff; --border:#d8dee4; --text:#1f2328; --muted:#656d76; --pass:#1a7f37; --fail:#cf222e; --warn:#9a6700; --info:#0969da; --shadow:0 1px 2px rgba(31,35,40,.06); }
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.page-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; padding: 28px 32px; background: var(--panel); border-bottom: 1px solid var(--border); } h1 { margin: 0; font-size: 28px; line-height: 1.15; letter-spacing: 0; } h2 { margin: 0; font-size: 17px; letter-spacing: 0; } h3 { margin: 20px 0 8px; font-size: 14px; letter-spacing: 0; color: var(--muted); text-transform: uppercase; } h4 { margin: 16px 0 8px; font-size: 14px; }
+.eyebrow, .meta, .empty, .case-id, .counts { margin: 0 0 6px; color: var(--muted); } .case-id, .counts, .card-label, th { font-size: 12px; } .summary-band, .metrics, .case-list, .raw-report { margin: 16px 32px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; } .card, .case-card, .raw-report, .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); } .card, .panel, .raw-report { padding: 12px; } .card-label, th { color: var(--muted); font-weight: 600; text-transform: uppercase; } .card-value { display: block; margin-top: 4px; font-size: 24px; font-weight: 700; }
+.metrics { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(280px, 2fr); gap: 16px; } .case-list { display: grid; gap: 12px; } .case-card { overflow: hidden; } .case-card > summary { cursor: pointer; list-style: none; padding: 14px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; } .case-card > summary::-webkit-details-marker { display: none; } .case-body { border-top: 1px solid var(--border); padding: 0 16px 16px; } .case-title { min-width: 0; } .case-title h2 { overflow-wrap: anywhere; }
+.badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 12px; border: 1px solid currentColor; white-space: nowrap; } .pass { color: var(--pass); background: #dafbe1; } .fail, .harness_error { color: var(--fail); background: #ffebe9; } .not_evaluated { color: var(--warn); background: #fff8c5; } .neutral { color: var(--muted); background: #f6f8fa; }
+.target-card { border: 1px solid var(--border); border-radius: 6px; margin-top: 12px; overflow: hidden; } .target-head { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; background: #f6f8fa; border-bottom: 1px solid var(--border); } .target-body { padding: 12px; } table { width: 100%; border-collapse: collapse; } th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+pre { margin: 8px 0 0; padding: 10px; overflow: auto; white-space: pre-wrap; background: #f6f8fa; border: 1px solid var(--border); border-radius: 6px; } details.evidence { margin-top: 10px; } details.evidence > summary, .raw-report > summary { cursor: pointer; color: var(--info); font-weight: 600; }
+@media (max-width: 760px) { .page-header { display: block; padding: 20px; } .summary-band, .metrics, .case-list, .raw-report { margin: 12px; } .metrics, .case-card > summary { grid-template-columns: 1fr; } }
+"""
+
+
+def _render_prompt_meta(report: dict[str, Any]) -> str:
+    prompt = report.get("prompt") if isinstance(report.get("prompt"), dict) else {}
+    bits = [
+        f"Cases: {_escape(report.get('case_count', len(report.get('cells', []))))}",
+        f"Targets: {_escape(report.get('target_count', 'n/a'))}",
+        f"Cells: {_escape(report.get('cell_count', len(report.get('cells', []))))}",
+    ]
+    if prompt:
+        bits.append(f"Prompt: {_escape(prompt.get('path', ''))} @ {_escape(str(prompt.get('sha256', ''))[:12])}")
+    return f"<p class='meta'>{' | '.join(bits)}</p>"
+
+
+def _render_promotion(promotion: Any) -> str:
+    if not isinstance(promotion, dict):
+        return ""
+    allowed = bool(promotion.get("allowed"))
+    status = "pass" if allowed else "fail"
+    label = "Promotion Allowed" if allowed else "Promotion Blocked"
+    reason = promotion.get("reason", "")
+    required = f"{promotion.get('required_pass', 0)}/{promotion.get('required_total', 0)} required pass"
+    return f"<aside class='panel'><span class='badge {status}'>{label}</span><p class='meta'>{_escape(reason)}</p><p class='meta'>{_escape(required)}</p></aside>"
+
+
+def _render_status_cards(statuses: Any) -> str:
+    if not isinstance(statuses, dict):
+        statuses = {}
+    order = ("pass", "fail", "not_evaluated", "harness_error", "timeout", "reused_exact_match")
+    cards = []
+    for name in order:
+        value = statuses.get(name, 0)
+        cards.append(f"<div class='card'><span class='card-label'>{_escape(_label(name))}</span><span class='card-value'>{_escape(value)}</span></div>")
+    return f"<div id='summary-grid' class='cards'>{''.join(cards)}</div>"
+
+
+def _render_metrics(metrics: Any, promotion: Any) -> str:
+    if not isinstance(metrics, dict):
+        metrics = {}
+    metric_cards = [
+        ("Duration", _seconds(metrics.get("duration_seconds"))),
+        ("Preflight", _seconds(metrics.get("preflight_duration_seconds"))),
+        ("Actual tokens", _number(metrics.get("actual_tokens_spent"))),
+        ("Avoided tokens", _number(metrics.get("avoided_tokens_by_reuse"))),
+    ]
+    top = metrics.get("top_duration_cells") if isinstance(metrics.get("top_duration_cells"), list) else []
+    rows = "".join(
+        f"<tr><td>{_escape(item.get('case_id', ''))}</td><td>{_escape(item.get('target_id', ''))}</td><td>{_seconds(item.get('duration_seconds'))}</td></tr>"
+        for item in top if isinstance(item, dict)
+    )
+    blocked = ""
+    if isinstance(promotion, dict) and promotion.get("failed_required_cases"):
+        blocked = f"<p class='meta'>{len(promotion.get('failed_required_cases', []))} failed required cases.</p>"
+    return f"""<section id='metrics-grid' class='metrics'>
+  <div class='panel'><h3>Metrics</h3><div class='cards'>{''.join(f"<div class='card'><span class='card-label'>{_escape(k)}</span><span class='card-value'>{_escape(v)}</span></div>" for k, v in metric_cards)}</div>{blocked}</div>
+  <div class='panel'><h3>Slowest Cells</h3><table><thead><tr><th>Case</th><th>Target</th><th>Duration</th></tr></thead><tbody>{rows or "<tr><td colspan='3'>No duration data.</td></tr>"}</tbody></table></div>
+</section>"""
+
+
+def _case_groups(report: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = report.get("cells")
+    if isinstance(rows, list) and any(isinstance(row, dict) and "case_id" in row and "target_id" in row for row in rows):
+        groups = _groups_from_flat_cells(rows)
+    else:
+        rows = report.get("cases", report.get("matrix", []))
+        groups = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+    return sorted(groups, key=lambda group: (_group_rank(group), str(_case(group).get("id") or "")))
+
+
+def _groups_from_flat_cells(cells: list[Any]) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for cell in cells:
+        if isinstance(cell, dict):
+            case_id = str(cell.get("case_id") or "case")
+            groups.setdefault(case_id, {"case": _case_from_cell(cell), "cells": []})["cells"].append(cell)
+    return list(groups.values())
+
+
+def _case_from_cell(cell: dict[str, Any]) -> dict[str, Any]:
+    return {"id": cell.get("case_id"), "name": cell.get("case_name") or cell.get("case_id"), "description": cell.get("case_description", ""), "user_input": cell.get("user_input", ""), "ground_truth": cell.get("ground_truth", [])}
+
+
+def _render_case_group(row: dict[str, Any]) -> str:
+    case = _case(row)
+    cells = _cells(row)
+    status = _group_status(cells)
+    open_attr = " open" if status in {"fail", "harness_error", "not_evaluated"} else ""
+    check_pass, check_total = _check_counts(cells)
+    return f"""<details class='case-card'{open_attr}>
+  <summary><span class='badge {_status_class(status)}'>{_escape(_label(status))}</span><div class='case-title'><h2>{_escape(case.get('name') or case.get('id') or 'case')}</h2><span class='case-id'>{_escape(case.get('id', ''))}</span></div><span class='counts'>{check_pass}/{check_total} checks pass</span></summary>
+  <div class='case-body'>
+    {_paragraph('Description', case.get('description'))}
+    {_paragraph('User Input', case.get('user_input'))}
+    {_list_block('Ground Truth', case.get('ground_truth', case.get('expectation', '')))}
+    {''.join(_render_cell(cell) for cell in sorted(cells, key=_cell_rank))}
+  </div>
+</details>"""
+
+
+def _render_cell(cell: dict[str, Any]) -> str:
+    status = str(cell.get("status") or "unknown")
+    reason = str(cell.get("reason") or "")
+    message = str(cell.get("message") or "")
+    changed = cell.get("changed_files") if isinstance(cell.get("changed_files"), list) else []
+    return f"""<article class='target-card'>
+  <div class='target-head'><strong>{_escape(cell.get('target_id', 'target'))}</strong><span class='badge {_status_class(status)}'>{_escape(_label(status))}</span></div>
+  <div class='target-body'>
+    <p class='meta'>{_escape(reason or 'no reason')} {('(reused exact match)' if cell.get('reused_exact_match') else '')}</p>
+    {_paragraph('Message', message)}
+    {_render_checks(cell.get('deterministic_checks'))}
+    {_render_judge(cell.get('judge'))}
+    {_list_block('Changed Files', changed)}
+    {_details('Final Response', cell.get('final_response'))}
+    {_details('Diff', cell.get('diff'))}
+    {_details('Normalized Evidence', cell.get('normalized_evidence'))}
+  </div>
+</article>"""
+
+
+def _render_checks(checks: Any) -> str:
+    if not isinstance(checks, list) or not checks:
+        return ""
+    rows = "".join(
+        f"<tr><td><span class='badge {'pass' if check.get('pass') else 'fail'}'>{'pass' if check.get('pass') else 'fail'}</span></td><td>{_escape(check.get('name', 'check'))}</td><td>{_escape(check.get('reason', ''))}</td></tr>"
+        for check in checks if isinstance(check, dict)
+    )
+    return f"<h4>deterministic_checks</h4><table><thead><tr><th>Status</th><th>Name</th><th>Reason</th></tr></thead><tbody>{rows}</tbody></table>"
+
+
+def _render_judge(judge: Any) -> str:
+    if not isinstance(judge, dict):
+        return ""
+    verdict = judge.get("verdict", judge.get("status", "judge"))
+    return f"<h4>Judge</h4><p><span class='badge {_status_class(str(judge.get('status') or verdict))}'>{_escape(verdict)}</span></p>{_paragraph('Rationale', judge.get('rationale'))}"
+
+
+def _paragraph(label: str, value: Any) -> str:
+    if value in (None, "", []):
+        return ""
+    return f"<h3>{_escape(label)}</h3><p>{_escape(value)}</p>"
+
+
+def _list_block(label: str, value: Any) -> str:
+    if value in (None, "", []):
+        return ""
+    items = value if isinstance(value, list) else [value]
+    return f"<h3>{_escape(label)}</h3><ul>{''.join(f'<li>{_escape(item)}</li>' for item in items)}</ul>"
+
+
+def _details(label: str, value: Any) -> str:
+    if value in (None, "", [], {}):
+        return ""
+    text = value if isinstance(value, str) else json.dumps(value, indent=2, sort_keys=True)
+    return f"<details class='evidence'><summary>{_escape(label)}</summary><pre>{_escape(text)}</pre></details>"
+
+
+def _case(row: dict[str, Any]) -> dict[str, Any]:
+    case = row.get("case", row); return case if isinstance(case, dict) else {}
+
+
+def _cells(row: dict[str, Any]) -> list[dict[str, Any]]:
+    cells = row.get("targets", row.get("cells", []))
+    return [cell for cell in cells if isinstance(cell, dict)] if isinstance(cells, list) else []
+
+
+def _group_status(cells: list[dict[str, Any]]) -> str:
+    return min((str(cell.get("status") or "unknown") for cell in cells), key=lambda status: STATUS_ORDER.get(status, 9), default="unknown")
+
+
+def _group_rank(group: dict[str, Any]) -> int: return STATUS_ORDER.get(_group_status(_cells(group)), 9)
+
+
+def _cell_rank(cell: dict[str, Any]) -> int: return STATUS_ORDER.get(str(cell.get("status") or ""), 9)
+
+
+def _check_counts(cells: list[dict[str, Any]]) -> tuple[int, int]:
+    checks = [check for cell in cells for check in cell.get("deterministic_checks", []) if isinstance(check, dict)]
+    return sum(1 for check in checks if check.get("pass")), len(checks)
+
+
+def _status_class(status: str) -> str: return status if status in {"pass", "fail", "harness_error", "not_evaluated"} else "neutral"
+
+
+def _label(value: Any) -> str:
+    text = str(value); return STATUS_LABELS.get(text, text.replace("_", " ").title())
+
+
+def _seconds(value: Any) -> str:
+    return f"{float(value or 0):.1f}s"
+
+
+def _number(value: Any) -> str:
+    return f"{int(value or 0):,}"
+
+
+def _escape(value: Any) -> str: return html.escape(str(value))

@@ -175,7 +175,7 @@ Run a category or critical subset:
 
 ```bash
 evals/bin/run_evals.py --category technical-partner --target-name local-pi
-evals/bin/run_evals.py --critical true --target-name local-pi --jobs 4
+evals/bin/run_evals.py --critical true --target-name local-pi
 ```
 
 Run OpenCode smoke coverage:

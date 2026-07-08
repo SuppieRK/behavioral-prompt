@@ -11,7 +11,7 @@ selection:
   # case: tf-bug-fix
   # category: test-first
   # tag: critical
-  # path: evals/cases/technical-partner/tp-weak-method.md
+  # path: tp-weak-method
   case:
   category:
   tag:
@@ -49,8 +49,6 @@ targets:
     agent:
       timeout:
         seconds: 300
-    eval:
-      jobs: 3
 
   local-codex-gpt55:
     harness: codex
@@ -62,8 +60,6 @@ targets:
     agent:
       timeout:
         seconds: 300
-    eval:
-      jobs: 1
 
   work-opencode-glm51:
     harness: opencode
@@ -126,7 +122,4 @@ report:
 
 reports:
   # evals/reports is gitignored and groups reports by configured target name.
-  # Example: a local-pi run of evals/cases/test-first/tf-bug-fix.md writes to
-  # evals/reports/local-pi/test-first/tf-bug-fix/report.json.
-  # Re-running a case overwrites its previous report.
   dir: evals/reports

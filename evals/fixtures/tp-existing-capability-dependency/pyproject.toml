@@ -1,0 +1,4 @@
+[project]
+name = "existing-capability-dependency"
+version = "1.0.0"
+description = "Fixture for dependency evidence behavior"
