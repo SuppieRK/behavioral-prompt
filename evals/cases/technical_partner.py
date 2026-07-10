@@ -58,7 +58,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('technical-partner', 'contract'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -72,7 +72,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('technical-partner', 'evidence'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -86,7 +86,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('technical-partner', 'data'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -170,7 +170,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('technical-partner', 'repo-context'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -198,7 +198,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('technical-partner', 'clarification'),
         critical=False,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -324,7 +324,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('technical-partner', 'tests'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -338,7 +338,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('technical-partner', 'validation'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -387,13 +387,9 @@ CASES = (
 
 
 UNRESTORED_SEMANTIC_CASE_IDS = {
-    "tp-better-validation-path",
-    "tp-dependency-heavy",
     "tp-missing-constraints",
     "tp-over-engineered",
     "tp-symptom-patch",
-    "tp-unsafe-path",
-    "tp-user-work-risk",
     "tp-weak-method",
 }
 

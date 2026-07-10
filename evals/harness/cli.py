@@ -13,9 +13,10 @@ from .judge import configured_judge_runner
 from .models import PromptArtifact
 from .preflight import coding_agent_smoke_preflight, docker_preflight, skipped_docker_preflight, skipped_smoke_preflight
 from .progress import print_progress, print_report_summary
+from .report_store import backfill_current_report_to_prompt_history, load_prior_cells_from_reports, write_prompt_history
 from .reporting.json_report import build_result_report
 from .reporting.writer import write_report
-from .reuse import build_reuse_plan, load_prior_cells, reused_cell, target_ids_requiring_smoke
+from .reuse import build_reuse_plan, reused_cell, target_ids_requiring_smoke
 from .scheduler import execute_case_target, run_case_first
 from .selftest import SELFTEST_CONTRACT_VERSION, run_selftests
 
@@ -32,6 +33,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--path")
     parser.add_argument("--critical", nargs="?", const=True, default=None, type=_optional_bool)
     parser.add_argument("--preflight-only", action="store_true")
+    parser.add_argument("--no-reuse", action="store_true", help="ignore evals/reports/current/result.json and execute selected cells fresh")
+    parser.add_argument("--confirm-failures", type=_non_negative_int, default=1, help="retry failed or transient error cells this many times before reporting the final status")
     return parser.parse_args(argv)
 
 
@@ -48,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     prompt = PromptArtifact.from_path(config.prompt_path)
     report_dir = config.reports_dir / "current"
     source_report = report_dir / "result.json"
-    prior_cells = load_prior_cells(source_report)
+    prior_cells = {} if args.no_reuse else load_prior_cells_from_reports(config.reports_dir, prompt.sha256)
     reuse_plan = build_reuse_plan(selected, tuple(config.selected_targets), prompt, fixtures_dir=Path(args.fixtures_dir), prior_cells=prior_cells, judge_config=config.judge.to_fingerprint_data())
     reuse_by_pair = {(decision.case_id, decision.target_id): decision for decision in reuse_plan}
     docker = docker_preflight() if _requires_docker(selected, reuse_plan, config, preflight_only=args.preflight_only) else skipped_docker_preflight(reason="no_non_reused_docker_judge_cells")
@@ -89,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             fixtures_dir=Path(args.fixtures_dir),
             judge_runner=judge_runner,
             judge_config=config.judge.to_fingerprint_data(),
+            confirm_failures=args.confirm_failures,
         ),
         progress=print_progress,
     )
@@ -102,7 +106,9 @@ def main(argv: list[str] | None = None) -> int:
         cells=cells,
         required_cases=registry.cases,
     )
+    backfill_current_report_to_prompt_history(config.reports_dir)
     write_report(config.reports_dir / "current", report)
+    write_prompt_history(config.reports_dir, report)
     print_report_summary(report)
     print(f"wrote report: {config.reports_dir / 'current'}")
     return 0 if report.get("promotion", {}).get("allowed") else 1
@@ -146,16 +152,50 @@ def _preflight_failure_message(item) -> str:
     return " ".join(pieces)
 
 
-def _execute_non_reused_cell(*, case, runner, prompt, fixtures_dir: Path, judge_runner, judge_config):
-    return execute_case_target(
-        case=case,
-        runner=runner,
-        prompt=prompt,
-        fixtures_dir=fixtures_dir,
-        timeout_seconds=runner.agent.timeout_seconds,
-        judge_runner=judge_runner,
-        judge_config=judge_config,
-    )
+def _execute_non_reused_cell(*, case, runner, prompt, fixtures_dir: Path, judge_runner, judge_config, confirm_failures: int = 1):
+    attempts = []
+    max_attempts = 1 + max(0, confirm_failures)
+    for attempt in range(1, max_attempts + 1):
+        cell = execute_case_target(
+            case=case,
+            runner=runner,
+            prompt=prompt,
+            fixtures_dir=fixtures_dir,
+            timeout_seconds=runner.agent.timeout_seconds,
+            judge_runner=judge_runner,
+            judge_config=judge_config,
+        )
+        attempts.append(_attempt_summary(attempt, cell))
+        if not _retryable_cell(cell) or attempt == max_attempts:
+            if len(attempts) > 1:
+                cell = dict(cell)
+                cell["confirmation"] = {
+                    "enabled": confirm_failures > 0,
+                    "max_attempts": max_attempts,
+                    "attempt_count": len(attempts),
+                    "attempts": attempts,
+                    "primary_status": attempts[0]["status"],
+                    "final_status": cell.get("status"),
+                    "flaky_pass_after_retry": attempts[0]["status"] != "pass" and cell.get("status") == "pass",
+                    "confirmed_failed": cell.get("status") != "pass",
+                }
+            return cell
+    raise AssertionError("unreachable retry loop exit")
+
+
+def _retryable_cell(cell: Mapping[str, Any]) -> bool:
+    status = str(cell.get("status") or "")
+    reason = str(cell.get("reason") or "")
+    return status in {"fail", "harness_error"} or (status == "not_evaluated" and reason == "timeout")
+
+
+def _attempt_summary(attempt: int, cell: Mapping[str, Any]) -> dict[str, object]:
+    return {
+        "attempt": attempt,
+        "status": cell.get("status"),
+        "reason": cell.get("reason"),
+        "message": cell.get("message"),
+    }
 
 
 def _case_selection_from_args(args: argparse.Namespace, raw_config: Mapping[str, Any]) -> CaseSelection:
@@ -217,6 +257,16 @@ def _optional_bool(value: Any) -> bool:
     if lowered in {"false", "no", "0"}:
         return False
     raise argparse.ArgumentTypeError(f"expected boolean value, got {value!r}")
+
+
+def _non_negative_int(value: Any) -> int:
+    try:
+        parsed = int(str(value))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected non-negative integer, got {value!r}") from None
+    if parsed < 0:
+        raise argparse.ArgumentTypeError(f"expected non-negative integer, got {value!r}")
+    return parsed
 
 
 def _requires_docker(cases, reuse_plan, config, *, preflight_only: bool = False) -> bool:

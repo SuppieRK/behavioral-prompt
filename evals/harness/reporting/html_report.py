@@ -36,6 +36,7 @@ def render_html(report: dict[str, Any]) -> str:
   <section class='summary-band' aria-label='Summary'>
     {_render_status_cards(report.get('status_counts', report.get('summary', {})))}
   </section>
+  {_render_run_overview(report)}
   {_render_metrics(report.get('metrics', {}), report.get('promotion', {}))}
   <main id='result-list' class='case-list'>{body or "<p class='empty'>No case results in this report.</p>"}</main>
   <details class='raw-report'><summary>Raw report JSON</summary><pre>{_escape(json.dumps(report, indent=2, sort_keys=True))}</pre></details>
@@ -47,16 +48,17 @@ def render_html(report: dict[str, Any]) -> str:
 
 def _css() -> str:
     return """
-:root { color-scheme: light; --bg:#f6f8fa; --panel:#fff; --border:#d8dee4; --text:#1f2328; --muted:#656d76; --pass:#1a7f37; --fail:#cf222e; --warn:#9a6700; --info:#0969da; --shadow:0 1px 2px rgba(31,35,40,.06); }
+:root { color-scheme: light; --bg:#f6f8fa; --panel:#fff; --border:#d8dee4; --text:#1f2328; --muted:#656d76; --subtle:#f6f8fa; --pass:#1a7f37; --fail:#cf222e; --warn:#9a6700; --info:#0969da; --shadow:0 1px 2px rgba(31,35,40,.06); --shadow-strong:0 8px 24px rgba(31,35,40,.08); }
 * { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-.page-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; padding: 28px 32px; background: var(--panel); border-bottom: 1px solid var(--border); } h1 { margin: 0; font-size: 28px; line-height: 1.15; letter-spacing: 0; } h2 { margin: 0; font-size: 17px; letter-spacing: 0; } h3 { margin: 20px 0 8px; font-size: 14px; letter-spacing: 0; color: var(--muted); text-transform: uppercase; } h4 { margin: 16px 0 8px; font-size: 14px; }
-.eyebrow, .meta, .empty, .case-id, .counts { margin: 0 0 6px; color: var(--muted); } .case-id, .counts, .card-label, th { font-size: 12px; } .summary-band, .metrics, .case-list, .raw-report { margin: 16px 32px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; } .card, .case-card, .raw-report, .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); } .card, .panel, .raw-report { padding: 12px; } .card-label, th { color: var(--muted); font-weight: 600; text-transform: uppercase; } .card-value { display: block; margin-top: 4px; font-size: 24px; font-weight: 700; }
-.metrics { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(280px, 2fr); gap: 16px; } .case-list { display: grid; gap: 12px; } .case-card { overflow: hidden; } .case-card > summary { cursor: pointer; list-style: none; padding: 14px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; } .case-card > summary::-webkit-details-marker { display: none; } .case-body { border-top: 1px solid var(--border); padding: 0 16px 16px; } .case-title { min-width: 0; } .case-title h2 { overflow-wrap: anywhere; }
+.page-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; padding: 30px 32px 24px; background: linear-gradient(180deg, #fff 0%, #f9fbfc 100%); border-bottom: 1px solid var(--border); } h1 { margin: 0; font-size: 30px; line-height: 1.12; letter-spacing: 0; } h2 { margin: 0; font-size: 17px; letter-spacing: 0; } h3 { margin: 20px 0 8px; font-size: 12px; letter-spacing: 0; color: var(--muted); text-transform: uppercase; } h4 { margin: 16px 0 8px; font-size: 14px; }
+.eyebrow, .meta, .empty, .case-id, .counts { margin: 0 0 6px; color: var(--muted); } .eyebrow { font-weight: 700; text-transform: uppercase; } .case-id, .counts, .card-label, th { font-size: 12px; } .summary-band, .overview, .metrics, .case-list, .raw-report { margin: 16px 32px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; } .card, .case-card, .raw-report, .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); } .card, .panel, .raw-report { padding: 12px; } .card-label, th { color: var(--muted); font-weight: 700; text-transform: uppercase; } .card-value { display: block; margin-top: 4px; font-size: 24px; font-weight: 750; }
+.overview { display: grid; grid-template-columns: minmax(260px, 1.1fr) minmax(280px, 2fr); gap: 16px; } .overview .panel, .metrics .panel { box-shadow: var(--shadow-strong); } .overview-list { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; } .overview-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--subtle); } .overview-note { margin: 8px 0 0; }
+.metrics { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(280px, 2fr); gap: 16px; } .case-list { display: grid; gap: 12px; } .case-card { overflow: hidden; } .case-card > summary { cursor: pointer; list-style: none; padding: 14px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; } .case-card > summary::-webkit-details-marker { display: none; } .case-card > summary::after { content: "Details"; color: var(--info); font-weight: 700; font-size: 12px; } .case-card[open] > summary::after { content: "Hide"; } .case-body { border-top: 1px solid var(--border); padding: 0 16px 16px; } .case-title { min-width: 0; } .case-title h2 { overflow-wrap: anywhere; }
 .badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 12px; border: 1px solid currentColor; white-space: nowrap; } .pass { color: var(--pass); background: #dafbe1; } .fail, .harness_error { color: var(--fail); background: #ffebe9; } .not_evaluated { color: var(--warn); background: #fff8c5; } .neutral { color: var(--muted); background: #f6f8fa; }
-.target-card { border: 1px solid var(--border); border-radius: 6px; margin-top: 12px; overflow: hidden; } .target-head { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; background: #f6f8fa; border-bottom: 1px solid var(--border); } .target-body { padding: 12px; } table { width: 100%; border-collapse: collapse; } th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
-pre { margin: 8px 0 0; padding: 10px; overflow: auto; white-space: pre-wrap; background: #f6f8fa; border: 1px solid var(--border); border-radius: 6px; } details.evidence { margin-top: 10px; } details.evidence > summary, .raw-report > summary { cursor: pointer; color: var(--info); font-weight: 600; }
-@media (max-width: 760px) { .page-header { display: block; padding: 20px; } .summary-band, .metrics, .case-list, .raw-report { margin: 12px; } .metrics, .case-card > summary { grid-template-columns: 1fr; } }
+.target-card { border: 1px solid var(--border); border-radius: 6px; margin-top: 12px; overflow: hidden; } .target-head { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--subtle); border-bottom: 1px solid var(--border); } .target-body { padding: 12px; } .target-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; } .pill { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: #fff; color: var(--muted); font-size: 12px; font-weight: 600; } table { width: 100%; border-collapse: collapse; } th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+pre { margin: 8px 0 0; padding: 10px; overflow: auto; white-space: pre-wrap; background: var(--subtle); border: 1px solid var(--border); border-radius: 6px; } details.evidence { margin-top: 10px; } details.evidence > summary, .raw-report > summary { cursor: pointer; color: var(--info); font-weight: 700; }
+@media (max-width: 760px) { .page-header { display: block; padding: 20px; } .summary-band, .overview, .metrics, .case-list, .raw-report { margin: 12px; } .overview, .metrics, .case-card > summary { grid-template-columns: 1fr; } .case-card > summary::after { content: ""; } }
 """
 
 
@@ -94,6 +96,52 @@ def _render_status_cards(statuses: Any) -> str:
     return f"<div id='summary-grid' class='cards'>{''.join(cards)}</div>"
 
 
+def _render_run_overview(report: dict[str, Any]) -> str:
+    cells = _flat_cells(report)
+    blocked = [cell for cell in cells if str(cell.get("status") or "") in {"fail", "harness_error", "not_evaluated"}]
+    promotion = report.get("promotion") if isinstance(report.get("promotion"), dict) else {}
+    blocked_rows = "".join(_overview_cell(cell) for cell in blocked[:8])
+    if not blocked_rows:
+        blocked_rows = "<li><span>No blocking cells in this report.</span><span class='badge pass'>Clean</span></li>"
+    more = ""
+    if len(blocked) > 8:
+        more = f"<p class='meta overview-note'>{len(blocked) - 8} more blocking cells are listed below.</p>"
+    reason = promotion.get("reason", "No promotion metadata recorded.") if promotion else "No promotion metadata recorded."
+    return f"""<section class='overview' aria-label='Run overview'>
+  <div class='panel'>
+    <h3>Run Overview</h3>
+    <p>{_escape(reason)}</p>
+    {_render_required_case_summary(promotion)}
+  </div>
+  <div class='panel'>
+    <h3>Needs Attention</h3>
+    <ul class='overview-list'>{blocked_rows}</ul>
+    {more}
+  </div>
+</section>"""
+
+
+def _render_required_case_summary(promotion: dict[str, Any]) -> str:
+    if not promotion:
+        return ""
+    failed = promotion.get("failed_required_cases") if isinstance(promotion.get("failed_required_cases"), list) else []
+    missing = promotion.get("missing_required_cases") if isinstance(promotion.get("missing_required_cases"), list) else []
+    bits = [
+        f"<span class='pill'>{_escape(promotion.get('required_pass', 0))}/{_escape(promotion.get('required_total', 0))} required pass</span>",
+        f"<span class='pill'>{_escape(len(failed))} failed required</span>",
+        f"<span class='pill'>{_escape(len(missing))} missing required</span>",
+    ]
+    return f"<div class='target-summary'>{''.join(bits)}</div>"
+
+
+def _overview_cell(cell: dict[str, Any]) -> str:
+    status = str(cell.get("status") or "unknown")
+    case = cell.get("case_id") or cell.get("case_name") or "case"
+    target = cell.get("target_id") or "target"
+    reason = cell.get("reason") or cell.get("message") or status
+    return f"<li><span><strong>{_escape(case)}</strong> <span class='meta'>{_escape(target)}: {_escape(reason)}</span></span><span class='badge {_status_class(status)}'>{_escape(_label(status))}</span></li>"
+
+
 def _render_metrics(metrics: Any, promotion: Any) -> str:
     if not isinstance(metrics, dict):
         metrics = {}
@@ -125,6 +173,13 @@ def _case_groups(report: dict[str, Any]) -> list[dict[str, Any]]:
         rows = report.get("cases", report.get("matrix", []))
         groups = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
     return sorted(groups, key=lambda group: (_group_rank(group), str(_case(group).get("id") or "")))
+
+
+def _flat_cells(report: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = report.get("cells")
+    if isinstance(rows, list):
+        return [row for row in rows if isinstance(row, dict)]
+    return [cell for group in _case_groups(report) for cell in _cells(group)]
 
 
 def _groups_from_flat_cells(cells: list[Any]) -> list[dict[str, Any]]:
@@ -165,6 +220,7 @@ def _render_cell(cell: dict[str, Any]) -> str:
     return f"""<article class='target-card'>
   <div class='target-head'><strong>{_escape(cell.get('target_id', 'target'))}</strong><span class='badge {_status_class(status)}'>{_escape(_label(status))}</span></div>
   <div class='target-body'>
+    {_render_cell_summary(cell)}
     <p class='meta'>{_escape(reason or 'no reason')} {('(reused exact match)' if cell.get('reused_exact_match') else '')}</p>
     {_paragraph('Message', message)}
     {_render_checks(cell.get('deterministic_checks'))}
@@ -175,6 +231,21 @@ def _render_cell(cell: dict[str, Any]) -> str:
     {_details('Normalized Evidence', cell.get('normalized_evidence'))}
   </div>
 </article>"""
+
+
+def _render_cell_summary(cell: dict[str, Any]) -> str:
+    checks = cell.get("deterministic_checks") if isinstance(cell.get("deterministic_checks"), list) else []
+    changed = cell.get("changed_files") if isinstance(cell.get("changed_files"), list) else []
+    pass_checks = sum(1 for check in checks if isinstance(check, dict) and check.get("pass"))
+    bits = [
+        f"<span class='pill'>{pass_checks}/{len(checks)} deterministic checks</span>",
+        f"<span class='pill'>{len(changed)} changed files</span>",
+    ]
+    if cell.get("reused_exact_match"):
+        bits.append("<span class='pill'>reused exact match</span>")
+    if cell.get("duration_seconds") is not None:
+        bits.append(f"<span class='pill'>{_escape(_seconds(cell.get('duration_seconds')))}</span>")
+    return f"<div class='target-summary'>{''.join(bits)}</div>"
 
 
 def _render_checks(checks: Any) -> str:

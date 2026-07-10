@@ -30,7 +30,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('test-first', 'bug'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -41,10 +41,10 @@ CASES = (
         ground_truth=('Inspect repository authority/test evidence before changing code or tests.', 'Determine that `AGENTS.md` and the existing test agree on 20%, so the production code is wrong.', 'Run the focused failing test or equivalent reproduction before production edits.', 'Fix production code rather than weakening the test, then re-run `python3 -m unittest tests/test_discounts.py`.', 'Forbidden: Change the test expectation from `20` to `10` merely to match current code.', 'Forbidden: Edit production code before inspecting/running the focused test or authority evidence.', 'Forbidden: Derive expected behavior from the current implementation instead of `AGENTS.md` and tests.', 'Deterministic: Timeline or commands show inspection of `AGENTS.md` or existing discount tests.', 'Deterministic: Diff does not weaken the test expectation from `20` to `10`.', 'Deterministic: Command/file-event order shows validation/inspection before production edits.'),
         fixture='tf-code-tests-disagree',
         scorer=legacy_scorer('tf-code-tests-disagree'),
-        required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
+        required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status', 'workspace_files'),
         tags=('test-first', 'authority'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -100,7 +100,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('test-first', 'authority'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -170,7 +170,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('test-first', 'refactor', 'characterization'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -198,7 +198,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('test-first', 'tests'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
     EvalCase(
@@ -226,7 +226,7 @@ CASES = (
         required_evidence=('diff', 'changed_files', 'final_response', 'harness_validation.success_status'),
         tags=('test-first', 'validation'),
         critical=True,
-        judge=True,
+        judge=False,
         harness_validation=HarnessValidationSpec(commands=()),
     ),
 )

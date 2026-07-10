@@ -14,6 +14,7 @@ def normalize_jsonish_output(stdout: str) -> NormalizedTargetEvidence:
     direct_parts = []
     assistant_snapshot = ""
     usage_raw = None
+    target_error = ""
     invalid_lines = 0
     for index, line in enumerate(stdout.splitlines()):
         try:
@@ -23,6 +24,8 @@ def normalize_jsonish_output(stdout: str) -> NormalizedTargetEvidence:
             continue
         if isinstance(event, dict):
             events.append(event)
+            if not target_error:
+                target_error = _target_error(event)
             command_events.extend(_command_events(event, index))
             tool_events.extend(_tool_events(event, index))
             delta = _text_delta(event)
@@ -58,6 +61,7 @@ def normalize_jsonish_output(stdout: str) -> NormalizedTargetEvidence:
             "ignored_events": 0,
             "parser": "jsonish-lines-v1",
         },
+        adapter_diagnostics={"target_error": target_error} if target_error else {},
         target_usage=normalize_usage(usage_raw),
         agent_command_events=tuple(command_events),
         agent_tool_events=tuple(tool_events),
@@ -81,6 +85,34 @@ def _text_delta(event: dict) -> str:
         text = item.get("text")
         return text if isinstance(text, str) else ""
     return ""
+
+
+def _target_error(event: dict) -> str:
+    for payload in _error_payloads(event):
+        stop_reason = str(payload.get("stopReason") or payload.get("stop_reason") or "").strip().lower()
+        error = payload.get("errorMessage") or payload.get("error") or payload.get("message")
+        if isinstance(error, dict):
+            error = error.get("message")
+        if isinstance(error, str) and error.strip() and (stop_reason == "error" or _assistant_or_roleless(payload)):
+            error_text = error.strip()
+            if not _benign_target_error(error_text):
+                return error_text
+        if stop_reason == "error":
+            return "target reported stopReason=error"
+    return ""
+
+
+def _benign_target_error(error: str) -> bool:
+    return error.strip().lower() == "websocket closed 1000"
+
+
+def _error_payloads(event: dict) -> tuple[dict, ...]:
+    payloads = [event]
+    for key in ("message", "item", "part"):
+        value = event.get(key)
+        if isinstance(value, dict):
+            payloads.append(value)
+    return tuple(payloads)
 
 
 def _direct_text(event: dict) -> str:

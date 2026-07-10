@@ -68,6 +68,7 @@ def build_result_report(
         "cell_count": len(cells),
         "status_counts": status_counts,
         "metrics": metrics,
+        "confirmation": _confirmation_summary(cells),
         "artifact_validation": artifact_validation,
         "promotion": promotion,
         "cells": cells,
@@ -119,6 +120,29 @@ def _metrics(cells: list[dict[str, Any]], preflights: dict[str, Any]) -> dict[st
             key=lambda item: float(item.get("duration_seconds") or 0),
             reverse=True,
         )[:5],
+    }
+
+
+def _confirmation_summary(cells: list[dict[str, Any]]) -> dict[str, Any]:
+    confirmations = [cell.get("confirmation") for cell in cells if isinstance(cell.get("confirmation"), dict)]
+    recovered: list[str] = []
+    confirmed_failed: list[str] = []
+    for cell in cells:
+        confirmation = cell.get("confirmation")
+        if not isinstance(confirmation, dict):
+            continue
+        case_id = str(cell.get("case_id") or "")
+        target_id = str(cell.get("target_id") or "")
+        label = case_id if target_id in {"", "None"} else f"{target_id}/{case_id}"
+        if confirmation.get("flaky_pass_after_retry"):
+            recovered.append(label)
+        if confirmation.get("confirmed_failed"):
+            confirmed_failed.append(label)
+    return {
+        "enabled": bool(confirmations),
+        "cell_count": len(confirmations),
+        "flaky_pass_after_retry": recovered,
+        "confirmed_failed": confirmed_failed,
     }
 
 

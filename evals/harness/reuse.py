@@ -86,7 +86,12 @@ def exact_match_reusable(current: CacheKeyManifest, prior: Mapping[str, Any] | N
     cell = prior.get("cell")
     if not isinstance(cell, Mapping):
         return True
-    return cell.get("status") in {"pass", "fail"}
+    if cell.get("status") == "pass":
+        return True
+    if cell.get("status") == "fail":
+        confirmation = cell.get("confirmation")
+        return isinstance(confirmation, Mapping) and bool(confirmation.get("confirmed_failed"))
+    return False
 
 
 def build_reuse_plan(

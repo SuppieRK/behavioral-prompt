@@ -121,6 +121,7 @@ def coding_agent_smoke_preflight(runner: SmokeRunner, *, timeout_seconds: int = 
                 )
             raw = runner.run(invocation)
             normalized = runner.normalize(raw)
+            target_error = str(normalized.adapter_diagnostics.get("target_error") or "").strip()
         except Exception as exc:
             return PreflightResult(
                 runner.id,
@@ -141,6 +142,13 @@ def coding_agent_smoke_preflight(runner: SmokeRunner, *, timeout_seconds: int = 
                 Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.CODING_AGENT_UNAVAILABLE, raw.stderr.strip() or raw.stdout.strip() or "coding-agent smoke preflight failed"),
                 time.monotonic() - start,
                 {"runtime": runner.agent.runtime.name, "model": runner.agent.model.to_fingerprint_data(), "returncode": raw.returncode, "failed_check": "process"},
+            )
+        if target_error:
+            return PreflightResult(
+                runner.id,
+                Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.CODING_AGENT_UNAVAILABLE, target_error),
+                time.monotonic() - start,
+                {"runtime": runner.agent.runtime.name, "model": runner.agent.model.to_fingerprint_data(), "failed_check": "target_error"},
             )
         if "SMOKE_OK" not in normalized.final_response:
             return PreflightResult(

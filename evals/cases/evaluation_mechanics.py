@@ -422,29 +422,6 @@ CASES = (
 
 
 UNRESTORED_SEMANTIC_CASE_IDS = {
-    "em-boolean-results",
-    "em-case-index",
-    "em-challenge-eval",
-    "em-config-targets",
-    "em-cross-agent-normalized",
-    "em-default-judge",
-    "em-det-plus-judge",
-    "em-deterministic-only",
-    "em-event-detail-common",
-    "em-failures-guide-prompt",
-    "em-final-pass-target",
-    "em-judge-json-pass",
-    "em-judge-malformed",
-    "em-judge-override",
-    "em-new-failure-mode",
-    "em-promote-target",
-    "em-run-one",
-    "em-run-subset",
-    "em-scope-pass-claim",
-    "em-semantic-judge",
-    "em-target-record",
-    "em-target-unavailable",
-    "em-test-first-eval",
 }
 
 

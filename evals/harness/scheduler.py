@@ -147,16 +147,21 @@ def execute_case_target(
                 cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir, judge_config=judge_config)
                 result = result_cell(case=case, runner=runner, outcome=Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.ADAPTER_PARSE, str(exc)), cache_key=cache_key, workspace=str(workspace.path))
         if result is None:
+            has_complete_structured_evidence = _has_complete_structured_evidence(case, evidence)
             if raw.timed_out:
                 outcome = Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.TIMEOUT, "target timed out")
                 checks: tuple[dict[str, object], ...] = ()
                 judge = None
-            elif raw.returncode not in (0, None) and _target_unavailable(raw.stdout, raw.stderr):
+            elif raw.returncode not in (0, None) and _target_unavailable(raw.stdout, raw.stderr) and not has_complete_structured_evidence:
                 outcome = Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.TARGET_UNAVAILABLE, raw.stderr.strip() or raw.stdout.strip())
                 checks = ()
                 judge = None
-            elif raw.returncode not in (0, None):
+            elif raw.returncode not in (0, None) and not has_complete_structured_evidence:
                 outcome = Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.AGENT_PROCESS, f"target exited {raw.returncode}")
+                checks = ()
+                judge = None
+            elif (target_error := str(target_evidence.adapter_diagnostics.get("target_error") or "").strip()) and not has_complete_structured_evidence:
+                outcome = Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.TARGET_UNAVAILABLE, target_error)
                 checks = ()
                 judge = None
             elif missing := missing_required_evidence(case, evidence):
@@ -228,6 +233,15 @@ def _target_unavailable(stdout: str, stderr: str) -> bool:
     text = f"{stdout}\n{stderr}".lower()
     markers = ("auth", "login", "unauthorized", "forbidden", "model unavailable", "runtime unavailable", "not authenticated", "usage limit", "purchase more credits", "try again at")
     return any(marker in text for marker in markers)
+
+
+def _has_complete_structured_evidence(case: EvalCase, evidence: NormalizedAgentEvidence) -> bool:
+    valid_events = int(evidence.target.parse_diagnostics.get("valid_events") or 0)
+    if valid_events <= 0:
+        return False
+    if missing_required_evidence(case, evidence):
+        return False
+    return bool(evidence.target.final_response.strip() or evidence.diff.strip() or evidence.changed_files)
 
 
 def _readme_evidence(prompt: PromptArtifact) -> dict[str, object]:

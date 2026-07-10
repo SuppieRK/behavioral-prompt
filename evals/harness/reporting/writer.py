@@ -18,4 +18,8 @@ def write_atomic(path: Path, text: str) -> None:
 def write_report(report_dir: Path, report: dict[str, object], *, public: bool = False) -> None:
     data = result_json(sanitize_public_report(report))
     write_atomic(report_dir / "result.json", json.dumps(data, indent=2, sort_keys=True))
-    write_atomic(report_dir / "result.html", render_html(data))
+    write_atomic(report_dir / "result.html", _strip_trailing_whitespace(render_html(data)))
+
+
+def _strip_trailing_whitespace(text: str) -> str:
+    return "\n".join(line.rstrip() for line in text.splitlines()) + "\n"
