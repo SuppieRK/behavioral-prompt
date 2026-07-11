@@ -13,7 +13,6 @@ class OutcomeStatus(StrEnum):
 
 class ReasonCode(StrEnum):
     NONE = ""
-    DOCKER_UNAVAILABLE = "docker_unavailable"
     CODING_AGENT_UNAVAILABLE = "coding_agent_unavailable"
     TARGET_UNAVAILABLE = "target_unavailable"
     TIMEOUT = "timeout"
@@ -24,7 +23,6 @@ class ReasonCode(StrEnum):
     WORKSPACE_SNAPSHOT = "workspace_snapshot"
     CLEANUP = "workspace_cleanup"
     SCORER_EXCEPTION = "scorer_exception"
-    JUDGE_UNAVAILABLE = "judge_unavailable"
     REPORT_GENERATION = "report_generation"
 
 

@@ -6,18 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .case_validation import case_fingerprint
-from .fingerprints import fingerprint_json, fixture_tree_fingerprint, source_fingerprint
+from .deterministic import score_cached_attempts
+from .fingerprints import fingerprint_json, fixture_tree_fingerprint
 from .models import CodingAgent, EvalCase, PromptArtifact
-from .selftest import SELFTEST_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
 class CacheKeyManifest:
     prompt_hash: str
-    case_hash: str
+    execution_hash: str
     fixture_hash: str | None
-    scorer_hash: str | None
     agent_hash: str
     runtime_hash: str
     model_hash: str
@@ -25,12 +23,9 @@ class CacheKeyManifest:
     normalizer_hash: str
     prompt_injection_hash: str
     isolation_hash: str
-    capability_hash: str
     auth_config_hash: str
-    judge_hash: str | None
-    selftest_contract_version: str
-    harness_version: str
-    report_schema_version: str = "result-json-v1"
+    evidence_contract_version: str = "deterministic-evidence-v1"
+    report_schema_version: str = "result-json-v2"
 
     def digest(self) -> str:
         return fingerprint_json(self.__dict__)
@@ -52,19 +47,13 @@ def build_cache_key(
     *,
     fixtures_dir: Path | None = None,
     fixture_hash: str | None = None,
-    scorer_hash: str | None = None,
-    judge_config: Mapping[str, object] | None = None,
-    harness_version: str = "harness-v1",
 ) -> CacheKeyManifest:
     if fixture_hash is None and fixtures_dir is not None and case.fixture:
         fixture_hash = fixture_tree_fingerprint(fixtures_dir / case.fixture)
-    if scorer_hash is None and case.scorer_fingerprint_sources:
-        scorer_hash = source_fingerprint(Path(path) for path in case.scorer_fingerprint_sources)
     return CacheKeyManifest(
         prompt_hash=prompt.sha256,
-        case_hash=case_fingerprint(case),
+        execution_hash=fingerprint_json({"id": case.id, "user_input": case.user_input, "fixture": case.fixture}),
         fixture_hash=fixture_hash,
-        scorer_hash=scorer_hash,
         agent_hash=agent.fingerprint,
         runtime_hash=fingerprint_json(agent.runtime.to_fingerprint_data()),
         model_hash=agent.model.fingerprint,
@@ -72,12 +61,17 @@ def build_cache_key(
         normalizer_hash=agent.normalizer_fingerprint,
         prompt_injection_hash=fingerprint_json(agent.prompt_injection.to_fingerprint_data()),
         isolation_hash=fingerprint_json(agent.isolation.to_fingerprint_data()),
-        capability_hash=fingerprint_json(agent.capabilities.to_fingerprint_data()),
         auth_config_hash=fingerprint_json({"auth_mode": agent.auth_mode, "auth_identity": dict(sorted(agent.auth_identity.items()))}),
-        judge_hash=fingerprint_json({"judge": case.judge, "config": dict(judge_config or {})}) if case.judge else None,
-        selftest_contract_version=SELFTEST_CONTRACT_VERSION,
-        harness_version=harness_version,
     )
+
+
+def build_score_key(case: EvalCase, evidence_digest: str) -> dict[str, str]:
+    manifest = {
+        "evidence_digest": evidence_digest,
+        "contract_hash": fingerprint_json(dict(case.contract)),
+        "scorer_version": "deterministic-scorer-v1",
+    }
+    return {"digest": fingerprint_json(manifest), **manifest}
 
 
 def exact_match_reusable(current: CacheKeyManifest, prior: Mapping[str, Any] | None) -> bool:
@@ -86,12 +80,7 @@ def exact_match_reusable(current: CacheKeyManifest, prior: Mapping[str, Any] | N
     cell = prior.get("cell")
     if not isinstance(cell, Mapping):
         return True
-    if cell.get("status") == "pass":
-        return True
-    if cell.get("status") == "fail":
-        confirmation = cell.get("confirmation")
-        return isinstance(confirmation, Mapping) and bool(confirmation.get("confirmed_failed"))
-    return False
+    return cell.get("status") in {"pass", "fail"} and isinstance(cell.get("normalized_evidence"), Mapping)
 
 
 def build_reuse_plan(
@@ -101,13 +90,12 @@ def build_reuse_plan(
     *,
     fixtures_dir: Path | None = None,
     prior_cells: Mapping[tuple[str, str], Mapping[str, Any]] | None = None,
-    judge_config: Mapping[str, object] | None = None,
 ) -> tuple[ReuseDecision, ...]:
     prior_cells = prior_cells or {}
     decisions: list[ReuseDecision] = []
     for case in cases:
         for agent in agents:
-            cache_key = build_cache_key(case, agent, prompt, fixtures_dir=fixtures_dir, judge_config=judge_config)
+            cache_key = build_cache_key(case, agent, prompt, fixtures_dir=fixtures_dir)
             prior = prior_cells.get((case.id, agent.id))
             decisions.append(ReuseDecision(case.id, agent.id, cache_key, exact_match_reusable(cache_key, prior), prior))
     return tuple(decisions)
@@ -141,12 +129,20 @@ def load_prior_cells(report_path: Path) -> dict[tuple[str, str], Mapping[str, An
     return loaded
 
 
-def reused_cell(decision: ReuseDecision, *, source_report: Path) -> dict[str, Any]:
+def reused_cell(decision: ReuseDecision, *, case: EvalCase, source_report: Path) -> dict[str, Any]:
     source = decision.source or {}
     cell = dict(source.get("cell", {})) if isinstance(source.get("cell"), dict) else {}
     cell["reused_exact_match"] = True
     cell["reuse_source"] = str(source_report)
     cell["cache_key"] = {"digest": decision.cache_key.digest(), **decision.cache_key.__dict__}
+    outcome, checks, passing_attempt = score_cached_attempts(case, cell)
+    cell["status"] = outcome.status.value
+    cell["reason"] = outcome.reason.value
+    cell["message"] = outcome.message
+    cell["deterministic_checks"] = list(checks)
+    cell["scored_attempt"] = passing_attempt
+    cell["score_key"] = build_score_key(case, decision.cache_key.digest())
+    cell["rescored_from_cache"] = True
     raw_run = dict(cell.get("raw_run") or {})
     raw_run["actual_tokens_spent"] = 0
     cell["raw_run"] = raw_run

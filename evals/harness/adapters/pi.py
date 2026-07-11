@@ -14,7 +14,6 @@ class PiRunner:
     def __init__(self, agent: CodingAgent):
         self.id = agent.id
         self.agent = agent
-        self.capabilities = agent.capabilities
 
     def build_invocation(self, context: AgentInvocationContext) -> AgentInvocation:
         executable = shutil.which("pi") or "pi"

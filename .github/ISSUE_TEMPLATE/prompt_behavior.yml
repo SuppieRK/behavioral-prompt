@@ -31,7 +31,8 @@ body:
       options:
         - Pi
         - OpenCode
-        - Both
+        - Codex
+        - Multiple targets
         - Not target-specific
         - Not tested
     validations:

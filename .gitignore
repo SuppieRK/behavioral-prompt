@@ -14,9 +14,12 @@ coverage.xml
 .DS_Store
 
 # LLM related
+.agents/
+skills-lock.json
 .pi/
 .opencode/
 .codex/
 evals/poc/.venv
 evals/poc/node_modules
 logs/
+evals/reports/.cache/

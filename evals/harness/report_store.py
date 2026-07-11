@@ -10,7 +10,7 @@ from .reporting.writer import write_atomic
 from .reuse import load_prior_cells
 
 
-PROMPT_HISTORY_DIR = "by-prompt"
+PROMPT_HISTORY_DIR = ".cache/by-prompt"
 PROMPT_CELLS_FILE = "cells.json"
 
 
@@ -21,6 +21,7 @@ def prompt_history_cells_path(reports_dir: Path, prompt_hash: str) -> Path:
 def load_prior_cells_from_reports(reports_dir: Path, prompt_hash: str) -> dict[tuple[str, str], Mapping[str, Any]]:
     prior: dict[tuple[str, str], Mapping[str, Any]] = {}
     _merge_prior(prior, load_prior_cells(prompt_history_cells_path(reports_dir, prompt_hash)))
+    _merge_prior(prior, load_prior_cells(reports_dir / ".cache" / "current" / "result.json"))
     _merge_prior(prior, load_prior_cells(reports_dir / "current" / "result.json"))
     return prior
 

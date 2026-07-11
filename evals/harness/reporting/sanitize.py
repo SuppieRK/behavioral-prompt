@@ -20,3 +20,18 @@ def sanitize_public_report(value: Any) -> Any:
     if isinstance(value, str):
         return redact_text(value)
     return value
+
+
+def compact_public_report(report: dict[str, Any]) -> dict[str, Any]:
+    compact = dict(report)
+    compact.pop("preflights", None)
+    cells = []
+    for value in report.get("cells", []):
+        if not isinstance(value, dict):
+            continue
+        cell = dict(value)
+        for key in ("diff", "final_response", "normalized_evidence", "raw_run", "workspace", "harness_validation", "attempt_cells"):
+            cell.pop(key, None)
+        cells.append(cell)
+    compact["cells"] = cells
+    return compact

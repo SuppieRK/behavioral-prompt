@@ -22,34 +22,6 @@ class PreflightResult:
     target_usage: TargetUsage = TargetUsage()
 
 
-def docker_preflight(timeout_seconds: int = 15) -> PreflightResult:
-    start = time.monotonic()
-    executable = shutil.which("docker")
-    if not executable:
-        return PreflightResult("docker", Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.DOCKER_UNAVAILABLE, "docker executable not found"), time.monotonic() - start, {})
-    try:
-        completed = subprocess.run([executable, "info"], text=True, capture_output=True, timeout=timeout_seconds, check=False)
-    except subprocess.TimeoutExpired:
-        return PreflightResult(
-            "docker",
-            Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.DOCKER_UNAVAILABLE, f"docker info timed out after {timeout_seconds}s"),
-            time.monotonic() - start,
-            {"timeout_seconds": timeout_seconds, "failed_check": "docker_info_timeout"},
-        )
-    if completed.returncode != 0:
-        return PreflightResult(
-            "docker",
-            Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.DOCKER_UNAVAILABLE, completed.stderr.strip() or completed.stdout.strip()),
-            time.monotonic() - start,
-            {"returncode": completed.returncode},
-        )
-    return PreflightResult("docker", Outcome(OutcomeStatus.PASS), time.monotonic() - start, {"executable": executable})
-
-
-def skipped_docker_preflight(*, reason: str) -> PreflightResult:
-    return PreflightResult("docker", Outcome(OutcomeStatus.PASS), 0.0, {"skipped": True, "reason": reason})
-
-
 def executable_preflight(agent: CodingAgent) -> PreflightResult:
     start = time.monotonic()
     executable = shutil.which(agent.runtime.executable)
@@ -136,6 +108,13 @@ def coding_agent_smoke_preflight(runner: SmokeRunner, *, timeout_seconds: int = 
                 time.monotonic() - start,
                 {"runtime": runner.agent.runtime.name, "model": runner.agent.model.to_fingerprint_data(), "failed_check": "timeout"},
             )
+        if raw.returncode not in (0, None) and _target_unavailable(raw.stdout, raw.stderr):
+            return PreflightResult(
+                runner.id,
+                Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.TARGET_UNAVAILABLE, raw.stderr.strip() or raw.stdout.strip() or "coding-agent target unavailable"),
+                time.monotonic() - start,
+                {"runtime": runner.agent.runtime.name, "model": runner.agent.model.to_fingerprint_data(), "returncode": raw.returncode, "failed_check": "target_unavailable"},
+            )
         if raw.returncode not in (0, None):
             return PreflightResult(
                 runner.id,
@@ -144,6 +123,13 @@ def coding_agent_smoke_preflight(runner: SmokeRunner, *, timeout_seconds: int = 
                 {"runtime": runner.agent.runtime.name, "model": runner.agent.model.to_fingerprint_data(), "returncode": raw.returncode, "failed_check": "process"},
             )
         if target_error:
+            if _target_unavailable(target_error, ""):
+                return PreflightResult(
+                    runner.id,
+                    Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.TARGET_UNAVAILABLE, target_error),
+                    time.monotonic() - start,
+                    {"runtime": runner.agent.runtime.name, "model": runner.agent.model.to_fingerprint_data(), "failed_check": "target_unavailable"},
+                )
             return PreflightResult(
                 runner.id,
                 Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.CODING_AGENT_UNAVAILABLE, target_error),
@@ -164,6 +150,24 @@ def coding_agent_smoke_preflight(runner: SmokeRunner, *, timeout_seconds: int = 
             {"runtime": runner.agent.runtime.name, "model": runner.agent.model.to_fingerprint_data(), "final_response": "SMOKE_OK", "prompt_injection": prompt_check},
             normalized.target_usage,
         )
+
+
+def _target_unavailable(stdout: str, stderr: str) -> bool:
+    text = f"{stdout}\n{stderr}".lower()
+    markers = (
+        "auth",
+        "login",
+        "unauthorized",
+        "forbidden",
+        "model unavailable",
+        "runtime unavailable",
+        "not authenticated",
+        "token refresh failed",
+        "usage limit",
+        "purchase more credits",
+        "try again at",
+    )
+    return any(marker in text for marker in markers)
 
 
 def _prompt_injection_check(metadata: object, argv: tuple[str, ...], prompt: PromptArtifact, workspace: Path) -> dict[str, object]:

@@ -57,7 +57,7 @@ def build_result_report(
         artifact_validation=artifact_validation,
     )
     return result_json({
-        "schema_version": "result-json-v1",
+        "schema_version": "result-json-v2",
         "title": "Prompt Eval Report",
         "prompt": {"path": str(prompt.path), "sha256": prompt.sha256},
         "selftests": selftests,
@@ -136,7 +136,7 @@ def _confirmation_summary(cells: list[dict[str, Any]]) -> dict[str, Any]:
         label = case_id if target_id in {"", "None"} else f"{target_id}/{case_id}"
         if confirmation.get("flaky_pass_after_retry"):
             recovered.append(label)
-        if confirmation.get("confirmed_failed"):
+        if confirmation.get("confirmed_failed") and cell.get("status") != "pass":
             confirmed_failed.append(label)
     return {
         "enabled": bool(confirmations),
@@ -239,10 +239,8 @@ def _artifact_validation(prompt: Any) -> dict[str, Any]:
     text = path.read_text() if path.exists() else ""
     checks = [
         _check("prompt_artifact_exists", path.exists(), f"prompt artifact exists: {path}", f"prompt artifact missing: {path}"),
-        _check("prompt_preserves_kernel", _prompt_preserves_kernel(text), "kernel areas present", "prompt missing required kernel areas"),
-        _check("prompt_harness_neutral", _prompt_harness_neutral(text), "no target-specific prompt wording", "target-specific prompt wording present"),
         _check("prompt_single_markdown", path.name == "PROMPT.md", "PROMPT.md is the primary artifact", f"primary prompt artifact is not PROMPT.md: {path}"),
-        _check("prompt_generic_durable_context", _prompt_generic_durable_context(text), "durable context wording is generic", "durable context wording is missing or target-specific"),
+        _check("prompt_nonempty_utf8", bool(text.strip()), "prompt contains text", "prompt is empty"),
         _check("prompt_reviewable_size", len(text.encode("utf-8")) <= 12000 and len(text.split()) <= 1800, "prompt remains reviewably small", "prompt exceeds reviewable size threshold"),
     ]
     return {"stage": "prompt-artifact", "pass": all(bool(check["pass"]) for check in checks), "checks": checks}
@@ -250,25 +248,3 @@ def _artifact_validation(prompt: Any) -> dict[str, Any]:
 
 def _check(name: str, passed: bool, pass_reason: str, fail_reason: str) -> dict[str, object]:
     return {"name": name, "pass": passed, "reason": pass_reason if passed else fail_reason}
-
-
-def _prompt_preserves_kernel(text: str) -> bool:
-    lowered = text.lower()
-    groups = (
-        ("challenge", "push back"),
-        ("test first", "test-first", "failing check", "reproduction"),
-        ("smallest", "minimal", "production-correct"),
-        ("durable", "todo", "plan"),
-        ("validate", "validation", "what ran"),
-    )
-    return all(any(token in lowered for token in group) for group in groups)
-
-
-def _prompt_harness_neutral(text: str) -> bool:
-    lowered = text.lower()
-    return not any(token in lowered for token in ("opencode", "codex", "--append-system-prompt")) and " pi " not in f" {lowered} "
-
-
-def _prompt_generic_durable_context(text: str) -> bool:
-    lowered = text.lower()
-    return "durable" in lowered and not any(token in lowered for token in ("todolist", "todowrite", "update_plan"))

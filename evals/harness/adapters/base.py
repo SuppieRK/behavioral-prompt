@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..capabilities import CapabilityMatrix
 from ..evidence import NormalizedTargetEvidence, RawAgentRun
 from ..models import AgentInvocation, AgentInvocationContext, CodingAgent
 
@@ -10,7 +9,6 @@ from ..models import AgentInvocation, AgentInvocationContext, CodingAgent
 class CodingAgentRunner(Protocol):
     id: str
     agent: CodingAgent
-    capabilities: CapabilityMatrix
 
     def build_invocation(self, context: AgentInvocationContext) -> AgentInvocation:
         ...

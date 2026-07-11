@@ -12,7 +12,17 @@ from pathlib import Path
 
 from .core import HarnessContractError
 
-IGNORED_NAMES = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".coverage", "coverage.xml", ".DS_Store"}
+IGNORED_NAMES = {
+    ".git",
+    ".ccp",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".coverage",
+    "coverage.xml",
+    ".DS_Store",
+}
 DIRTY_STATE_METADATA = Path(".eval/dirty-state.json")
 
 

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Mapping
 
-from .capabilities import CapabilityMatrix
 from .core import HarnessContractError, require_safe_id
 from .fingerprints import fingerprint_json, sha256_file
 
@@ -87,7 +86,6 @@ class CodingAgent:
     isolation: IsolationStrategy
     adapter_fingerprint: str
     normalizer_fingerprint: str
-    capabilities: CapabilityMatrix
     auth_mode: str = "unknown"
     auth_identity: Mapping[str, str] = field(default_factory=dict)
     planning_tool: str | None = None
@@ -105,7 +103,6 @@ class CodingAgent:
             "isolation": self.isolation.to_fingerprint_data(),
             "adapter_fingerprint": self.adapter_fingerprint,
             "normalizer_fingerprint": self.normalizer_fingerprint,
-            "capabilities": self.capabilities.to_fingerprint_data(),
             "auth_mode": self.auth_mode,
             "auth_identity": dict(sorted(self.auth_identity.items())),
             "planning_tool": self.planning_tool,
@@ -149,9 +146,6 @@ class HarnessValidationSpec:
         }
 
 
-Scorer = Callable[[Any], list[dict[str, object]]]
-
-
 @dataclass(frozen=True)
 class EvalCase:
     id: str
@@ -159,14 +153,15 @@ class EvalCase:
     description: str
     user_input: str
     ground_truth: tuple[str, ...]
+    forbidden_behavior: tuple[str, ...] = ()
     fixture: str | None = None
-    scorer: Scorer | None = None
     required_evidence: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
     critical: bool = False
-    judge: bool = False
     execution_limits: Mapping[str, Any] | None = None
+    evidence_files: tuple[str, ...] = ()
     harness_validation: HarnessValidationSpec = field(default_factory=HarnessValidationSpec)
+    contract: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         require_safe_id(self.id, field_name="EvalCase.id")
@@ -174,31 +169,12 @@ class EvalCase:
             if not getattr(self, field_name):
                 raise HarnessContractError(f"EvalCase.{field_name} is required for {self.id}")
         object.__setattr__(self, "ground_truth", stable_tuple(self.ground_truth))
+        object.__setattr__(self, "forbidden_behavior", stable_tuple(self.forbidden_behavior))
         object.__setattr__(self, "required_evidence", stable_tuple(self.required_evidence))
         object.__setattr__(self, "tags", stable_tuple(self.tags))
+        object.__setattr__(self, "evidence_files", stable_tuple(self.evidence_files))
         if not self.ground_truth:
             raise HarnessContractError(f"EvalCase.ground_truth is required for {self.id}")
-
-    @property
-    def scorer_id(self) -> str | None:
-        if self.scorer is None:
-            return None
-        explicit = getattr(self.scorer, "stable_id", None)
-        if explicit:
-            return str(explicit)
-        return f"{self.scorer.__module__}.{self.scorer.__qualname__}"
-
-    @property
-    def scorer_evidence_dependencies(self) -> tuple[str, ...]:
-        if self.scorer is None:
-            return ()
-        return stable_tuple(getattr(self.scorer, "evidence_dependencies", ()))
-
-    @property
-    def scorer_fingerprint_sources(self) -> tuple[str, ...]:
-        if self.scorer is None:
-            return ()
-        return stable_tuple(getattr(self.scorer, "fingerprint_sources", ()))
 
     def to_fingerprint_data(self) -> dict[str, Any]:
         return {
@@ -207,16 +183,15 @@ class EvalCase:
             "description": self.description,
             "user_input": self.user_input,
             "ground_truth": self.ground_truth,
+            "forbidden_behavior": self.forbidden_behavior,
             "fixture": self.fixture,
-            "scorer": self.scorer_id,
-            "scorer_evidence_dependencies": self.scorer_evidence_dependencies,
-            "scorer_fingerprint_sources": self.scorer_fingerprint_sources,
             "required_evidence": self.required_evidence,
             "tags": self.tags,
             "critical": self.critical,
-            "judge": self.judge,
             "execution_limits": self.execution_limits,
+            "evidence_files": self.evidence_files,
             "harness_validation": self.harness_validation.to_fingerprint_data(),
+            "contract": dict(self.contract),
         }
 
 

@@ -4,14 +4,14 @@ Describe the prompt, eval, or documentation change.
 
 ## Validation
 
-- [ ] `python3 -m unittest evals/tests/test_run_evals.py evals/tests/test_report_viewer.py`
-- [ ] Relevant Pi evals:
-- [ ] Relevant OpenCode evals:
+- [ ] `python3 -m unittest discover evals/tests -v`
+- [ ] Affected cases were refreshed across Pi, OpenCode, and Codex, or agent
+      execution was correctly skipped for a non-behavior change.
+- [ ] The complete 48-cell gate passed when prompt or target identity changed.
 
 ## Checklist
 
 - [ ] Prompt behavior changes are covered by evals.
-- [ ] `evals/cases/index.md` is updated when case inventory changed.
-- [ ] Only intentionally sanitized aggregate reports under `evals/reports/` are
-      committed.
-- [ ] Any target-specific Pi/OpenCode behavior is called out.
+- [ ] Eval requests separate the user goal from any intentionally flawed method.
+- [ ] Only the sanitized current report is committed.
+- [ ] Target-specific model or reasoning behavior is called out.

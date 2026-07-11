@@ -39,7 +39,6 @@ def render_html(report: dict[str, Any]) -> str:
   {_render_run_overview(report)}
   {_render_metrics(report.get('metrics', {}), report.get('promotion', {}))}
   <main id='result-list' class='case-list'>{body or "<p class='empty'>No case results in this report.</p>"}</main>
-  <details class='raw-report'><summary>Raw report JSON</summary><pre>{_escape(json.dumps(report, indent=2, sort_keys=True))}</pre></details>
   <script type='application/json' id='report'>{embedded}</script>
   <script>{REPORT_EMBED_MARKER} = JSON.parse(document.getElementById('report').textContent);</script>
 </body>
@@ -200,9 +199,9 @@ def _render_case_group(row: dict[str, Any]) -> str:
     cells = _cells(row)
     status = _group_status(cells)
     open_attr = " open" if status in {"fail", "harness_error", "not_evaluated"} else ""
-    check_pass, check_total = _check_counts(cells)
+    passed = sum(1 for cell in cells if cell.get("status") == "pass")
     return f"""<details class='case-card'{open_attr}>
-  <summary><span class='badge {_status_class(status)}'>{_escape(_label(status))}</span><div class='case-title'><h2>{_escape(case.get('name') or case.get('id') or 'case')}</h2><span class='case-id'>{_escape(case.get('id', ''))}</span></div><span class='counts'>{check_pass}/{check_total} checks pass</span></summary>
+  <summary><span class='badge {_status_class(status)}'>{_escape(_label(status))}</span><div class='case-title'><h2>{_escape(case.get('name') or case.get('id') or 'case')}</h2><span class='case-id'>{_escape(case.get('id', ''))}</span></div><span class='counts'>{passed}/{len(cells)} targets pass</span></summary>
   <div class='case-body'>
     {_paragraph('Description', case.get('description'))}
     {_paragraph('User Input', case.get('user_input'))}
@@ -224,21 +223,14 @@ def _render_cell(cell: dict[str, Any]) -> str:
     <p class='meta'>{_escape(reason or 'no reason')} {('(reused exact match)' if cell.get('reused_exact_match') else '')}</p>
     {_paragraph('Message', message)}
     {_render_checks(cell.get('deterministic_checks'))}
-    {_render_judge(cell.get('judge'))}
     {_list_block('Changed Files', changed)}
-    {_details('Final Response', cell.get('final_response'))}
-    {_details('Diff', cell.get('diff'))}
-    {_details('Normalized Evidence', cell.get('normalized_evidence'))}
   </div>
 </article>"""
 
 
 def _render_cell_summary(cell: dict[str, Any]) -> str:
-    checks = cell.get("deterministic_checks") if isinstance(cell.get("deterministic_checks"), list) else []
     changed = cell.get("changed_files") if isinstance(cell.get("changed_files"), list) else []
-    pass_checks = sum(1 for check in checks if isinstance(check, dict) and check.get("pass"))
     bits = [
-        f"<span class='pill'>{pass_checks}/{len(checks)} deterministic checks</span>",
         f"<span class='pill'>{len(changed)} changed files</span>",
     ]
     if cell.get("reused_exact_match"):
@@ -249,20 +241,15 @@ def _render_cell_summary(cell: dict[str, Any]) -> str:
 
 
 def _render_checks(checks: Any) -> str:
-    if not isinstance(checks, list) or not checks:
+    if not isinstance(checks, list):
         return ""
-    rows = "".join(
-        f"<tr><td><span class='badge {'pass' if check.get('pass') else 'fail'}'>{'pass' if check.get('pass') else 'fail'}</span></td><td>{_escape(check.get('name', 'check'))}</td><td>{_escape(check.get('reason', ''))}</td></tr>"
-        for check in checks if isinstance(check, dict)
-    )
-    return f"<h4>deterministic_checks</h4><table><thead><tr><th>Status</th><th>Name</th><th>Reason</th></tr></thead><tbody>{rows}</tbody></table>"
-
-
-def _render_judge(judge: Any) -> str:
-    if not isinstance(judge, dict):
-        return ""
-    verdict = judge.get("verdict", judge.get("status", "judge"))
-    return f"<h4>Judge</h4><p><span class='badge {_status_class(str(judge.get('status') or verdict))}'>{_escape(verdict)}</span></p>{_paragraph('Rationale', judge.get('rationale'))}"
+    items = []
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        status = "pass" if check.get("pass") else "fail"
+        items.append(f"<li><span class='badge {_status_class(status)}'>{_escape(status)}</span> <strong>{_escape(check.get('name', 'check'))}</strong> <span class='meta'>{_escape(check.get('observed', ''))}</span></li>")
+    return f"<h4>Deterministic checks</h4><ul>{''.join(items)}</ul>" if items else ""
 
 
 def _paragraph(label: str, value: Any) -> str:
@@ -302,11 +289,6 @@ def _group_rank(group: dict[str, Any]) -> int: return STATUS_ORDER.get(_group_st
 
 
 def _cell_rank(cell: dict[str, Any]) -> int: return STATUS_ORDER.get(str(cell.get("status") or ""), 9)
-
-
-def _check_counts(cells: list[dict[str, Any]]) -> tuple[int, int]:
-    checks = [check for cell in cells for check in cell.get("deterministic_checks", []) if isinstance(check, dict)]
-    return sum(1 for check in checks if check.get("pass")), len(checks)
 
 
 def _status_class(status: str) -> str: return status if status in {"pass", "fail", "harness_error", "not_evaluated"} else "neutral"

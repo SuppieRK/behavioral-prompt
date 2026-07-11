@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping
 
-from .capabilities import CapabilityStatus
 
 
 @dataclass(frozen=True)
@@ -49,10 +48,10 @@ class NormalizedTargetEvidence:
     agent_events: tuple[Mapping[str, object], ...] = ()
     agent_tool_events: tuple[Mapping[str, object], ...] = ()
     agent_command_events: tuple[Mapping[str, object], ...] = ()
+    agent_actions: tuple[Mapping[str, object], ...] = ()
     parse_diagnostics: Mapping[str, object] = field(default_factory=dict)
     path_diagnostics: tuple[Mapping[str, object], ...] = ()
     target_usage: TargetUsage = field(default_factory=TargetUsage)
-    provided_capabilities: Mapping[str, CapabilityStatus | str] = field(default_factory=dict)
     adapter_diagnostics: Mapping[str, object] = field(default_factory=dict)
 
 

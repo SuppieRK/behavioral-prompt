@@ -6,52 +6,8 @@ from typing import Any, Mapping
 
 import yaml
 
-from .capabilities import CapabilityMatrix, CapabilityStatus
 from .core import HarnessContractError
 from .models import CodingAgent, CodingAgentRuntime, IsolationStrategy, LLMModel, PromptInjectionStrategy
-
-
-COMMON_CAPABILITIES = CapabilityMatrix({
-    "structured_events": CapabilityStatus.SUPPORTED,
-    "final_response": CapabilityStatus.SUPPORTED,
-    "process_status": CapabilityStatus.SUPPORTED,
-    "diff": CapabilityStatus.SUPPORTED,
-    "workspace_diff": CapabilityStatus.SUPPORTED,
-    "changed_files": CapabilityStatus.SUPPORTED,
-    "harness_validation": CapabilityStatus.SUPPORTED,
-    "harness_validation.success_status": CapabilityStatus.SUPPORTED,
-    "prompt_path": CapabilityStatus.SUPPORTED,
-    "prompt_text": CapabilityStatus.SUPPORTED,
-    "workspace_files": CapabilityStatus.SUPPORTED,
-    "readme_path": CapabilityStatus.SUPPORTED,
-    "readme_text": CapabilityStatus.SUPPORTED,
-    "target_usage": CapabilityStatus.SUPPORTED,
-    "agent_tool_events": CapabilityStatus.BEST_EFFORT,
-    "agent_command_events": CapabilityStatus.BEST_EFFORT,
-})
-
-
-@dataclass(frozen=True)
-class JudgeConfig:
-    enabled: bool
-    backend: str
-    model: str
-    timeout_seconds: int
-    retry_attempts: int
-    retry_backoff_seconds: float
-
-    @property
-    def requires_docker(self) -> bool:
-        return self.enabled and self.backend == "docker-model-runner"
-
-    def to_fingerprint_data(self) -> dict[str, object]:
-        return {
-            "enabled": self.enabled,
-            "backend": self.backend,
-            "model": self.model,
-            "timeout_seconds": self.timeout_seconds,
-            "retry_attempts": self.retry_attempts,
-        }
 
 
 @dataclass(frozen=True)
@@ -59,7 +15,6 @@ class HarnessConfig:
     path: Path
     prompt_path: Path
     reports_dir: Path
-    judge: JudgeConfig
     selected_targets: tuple[CodingAgent, ...]
     raw: Mapping[str, Any]
 
@@ -73,47 +28,28 @@ def load_yaml_config(path: Path) -> Mapping[str, Any]:
     return data
 
 
-def load_harness_config(path: Path, *, target_names: tuple[str, ...] = ()) -> HarnessConfig:
+def load_harness_config(path: Path) -> HarnessConfig:
     raw = load_yaml_config(path)
     prompt_value = _nested(raw, ("prompt", "candidate"), "PROMPT.md")
     reports_value = _nested(raw, ("reports", "dir"), "evals/reports")
-    targets = build_selected_agents(raw, target_names=target_names)
+    targets = build_selected_agents(raw)
     return HarnessConfig(
         path=path,
         prompt_path=Path(str(prompt_value)),
         reports_dir=Path(str(reports_value)),
-        judge=build_judge_config(raw),
         selected_targets=targets,
         raw=raw,
     )
 
 
-def build_judge_config(raw: Mapping[str, Any]) -> JudgeConfig:
-    judge = raw.get("judge", {})
-    judge_map = judge if isinstance(judge, Mapping) else {}
-    timeout = judge_map.get("timeout", {})
-    retry = judge_map.get("retry", {})
-    timeout_map = timeout if isinstance(timeout, Mapping) else {}
-    retry_map = retry if isinstance(retry, Mapping) else {}
-    return JudgeConfig(
-        enabled=bool(judge_map.get("enabled", False)),
-        backend=str(judge_map.get("backend", "")).strip(),
-        model=str(judge_map.get("model", "")).strip(),
-        timeout_seconds=int(timeout_map.get("seconds", 180) or 180),
-        retry_attempts=int(retry_map.get("attempts", 1) or 1),
-        retry_backoff_seconds=float(retry_map.get("backoff_seconds", 0) or 0),
-    )
-
-
-def build_selected_agents(raw: Mapping[str, Any], *, target_names: tuple[str, ...] = ()) -> tuple[CodingAgent, ...]:
+def build_selected_agents(raw: Mapping[str, Any]) -> tuple[CodingAgent, ...]:
     configured = raw.get("targets", {})
     if not isinstance(configured, dict):
         raise HarnessContractError("targets config must be a mapping")
-    if target_names:
-        names = target_names
-    else:
-        default = raw.get("default_target")
-        names = (str(default),) if default else tuple(str(name) for name in configured)
+    configured_defaults = raw.get("default_targets")
+    if not isinstance(configured_defaults, (list, tuple)):
+        raise HarnessContractError("default_targets config must list every required target")
+    names = tuple(str(name) for name in configured_defaults)
     if not names:
         raise HarnessContractError("no eval targets selected")
     agents = []
@@ -135,15 +71,22 @@ def build_agent(name: str, target: Mapping[str, Any], *, default_timeout_seconds
     planning = target.get("planning", {})
     planning_tool = str(planning.get("tool", "")).strip() if isinstance(planning, dict) else None
     runtime = CodingAgentRuntime(harness, harness, "jsonl" if harness == "codex" else "json")
+    isolation_method = {
+        "codex": "host-codex-auth-ignored-config",
+        "opencode": "temporary-opencode-config-host-data",
+    }.get(harness, f"temporary-{harness}-state")
+    isolation_fingerprint = {
+        "codex": "isolation-codex-host-auth-v2",
+        "opencode": "isolation-opencode-host-data-v2",
+    }.get(harness, "isolation-v1")
     return CodingAgent(
         id=name,
         runtime=runtime,
         model=model,
         prompt_injection=PromptInjectionStrategy("append-system-prompt" if harness == "pi" else "AGENTS.md", "prompt-injection-v1"),
-        isolation=IsolationStrategy(f"temporary-{harness}-state", "isolation-v1"),
-        adapter_fingerprint=f"{harness}-adapter-v1",
+        isolation=IsolationStrategy(isolation_method, isolation_fingerprint),
+        adapter_fingerprint=f"{harness}-adapter-v2",
         normalizer_fingerprint=_normalizer_fingerprint(harness),
-        capabilities=COMMON_CAPABILITIES,
         auth_mode=str(target.get("auth", "unknown")),
         auth_identity={"harness": harness},
         planning_tool=planning_tool or None,
@@ -167,8 +110,7 @@ def normalize_model(runtime: str, model: str, reasoning: object = None) -> LLMMo
 
 
 def _normalizer_fingerprint(harness: str) -> str:
-    versions = {"pi": "v2"}
-    return f"{harness}-normalizer-{versions.get(harness, 'v1')}"
+    return f"{harness}-normalizer-{'v5' if harness == 'opencode' else 'v3'}"
 
 
 def _nested(data: Mapping[str, Any], path: tuple[str, ...], default: Any) -> Any:

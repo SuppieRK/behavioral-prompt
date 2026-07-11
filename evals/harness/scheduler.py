@@ -9,14 +9,13 @@ from uuid import uuid4
 from .adapters.base import CodingAgentRunner
 from .cells import result_cell, unavailable_auth_cell
 from .evidence import NormalizedAgentEvidence
-from .judge import JudgeRunner
-from .judge_prompt import judge_prompt
+from .deterministic import score_case
+from .actions import compact_actions
 from .models import AgentInvocationContext, EvalCase, PromptArtifact
 from .outcomes import Outcome, OutcomeStatus, ReasonCode
 from .progress import ProgressCallback, emit_progress, progress_summary
 from .prompt_injection import baseline_prompt_injection
-from .reuse import build_cache_key
-from .scoring import missing_required_evidence, run_deterministic_scorer
+from .reuse import build_cache_key, build_score_key
 from .validation import run_harness_validation
 from .workspace import create_workspace, diff_snapshots, snapshot_files, snapshot_text_files
 
@@ -34,6 +33,7 @@ def run_case_first(
     execute,
     *,
     progress: ProgressCallback | None = None,
+    cell_checkpoint=None,
 ) -> tuple[MatrixCell, ...]:
     cells: list[MatrixCell] = []
     completed_results: list[dict[str, object]] = []
@@ -53,6 +53,8 @@ def run_case_first(
                 completed_cells += 1
                 completed_results.append(result)
                 cells.append(MatrixCell(case.id, runner.id, result))
+                if cell_checkpoint is not None:
+                    cell_checkpoint(result)
                 emit_progress(progress, {
                     "event": "cell_completed",
                     "case_id": case.id,
@@ -87,19 +89,13 @@ def execute_case_target(
     prompt: PromptArtifact,
     fixtures_dir: Path,
     timeout_seconds: int = 360,
-    judge_runner: JudgeRunner | None = None,
-    judge_config: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     if runner.agent.auth_unavailable:
-        return unavailable_auth_cell(case=case, runner=runner, prompt=prompt, fixtures_dir=fixtures_dir, judge_config=judge_config)
-    unsupported = runner.capabilities.unsupported_required(case.required_evidence)
-    if unsupported:
-        cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir, judge_config=judge_config)
-        return result_cell(case=case, runner=runner, outcome=Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.REQUIRED_EVIDENCE_UNAVAILABLE, f"required evidence unavailable: {', '.join(unsupported)}"), cache_key=cache_key)
+        return unavailable_auth_cell(case=case, runner=runner, prompt=prompt, fixtures_dir=fixtures_dir)
     try:
         workspace = create_workspace(fixture_name=case.fixture, fixtures_dir=fixtures_dir)
     except Exception as exc:
-        cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir, judge_config=judge_config)
+        cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir)
         return result_cell(case=case, runner=runner, outcome=Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.FIXTURE_SETUP, str(exc)), cache_key=cache_key)
 
     result: dict[str, object] | None = None
@@ -123,7 +119,7 @@ def execute_case_target(
             baseline_prompt_injection(workspace.path, invocation.prompt_injection)
             before = snapshot_files(workspace.path)
         except Exception as exc:
-            cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir, judge_config=judge_config)
+            cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir)
             result = result_cell(case=case, runner=runner, outcome=Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.WORKSPACE_SNAPSHOT, str(exc)), cache_key=cache_key, workspace=str(workspace.path))
         if result is None:
             try:
@@ -144,50 +140,37 @@ def execute_case_target(
                     **_readme_evidence(prompt),
                 )
             except Exception as exc:
-                cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir, judge_config=judge_config)
+                cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir)
                 result = result_cell(case=case, runner=runner, outcome=Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.ADAPTER_PARSE, str(exc)), cache_key=cache_key, workspace=str(workspace.path))
         if result is None:
-            has_complete_structured_evidence = _has_complete_structured_evidence(case, evidence)
+            has_complete_structured_evidence = _has_complete_structured_evidence(evidence)
+            target_error = str(target_evidence.adapter_diagnostics.get("target_error") or "").strip()
+            target_unavailable_message = _target_unavailable_message(
+                raw.stdout,
+                raw.stderr,
+                target_error,
+                target_evidence.final_response,
+            )
             if raw.timed_out:
                 outcome = Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.TIMEOUT, "target timed out")
-                checks: tuple[dict[str, object], ...] = ()
-                judge = None
             elif raw.returncode not in (0, None) and _target_unavailable(raw.stdout, raw.stderr) and not has_complete_structured_evidence:
                 outcome = Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.TARGET_UNAVAILABLE, raw.stderr.strip() or raw.stdout.strip())
-                checks = ()
-                judge = None
+            elif target_unavailable_message and _target_unavailable_output_only(target_evidence, changed_files, diff):
+                outcome = Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.TARGET_UNAVAILABLE, target_unavailable_message)
             elif raw.returncode not in (0, None) and not has_complete_structured_evidence:
                 outcome = Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.AGENT_PROCESS, f"target exited {raw.returncode}")
-                checks = ()
-                judge = None
-            elif (target_error := str(target_evidence.adapter_diagnostics.get("target_error") or "").strip()) and not has_complete_structured_evidence:
+            elif target_error and not has_complete_structured_evidence:
                 outcome = Outcome(OutcomeStatus.NOT_EVALUATED, ReasonCode.TARGET_UNAVAILABLE, target_error)
-                checks = ()
-                judge = None
-            elif missing := missing_required_evidence(case, evidence):
-                outcome = Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.REQUIRED_EVIDENCE_UNAVAILABLE, f"required evidence missing: {', '.join(missing)}")
-                checks = ()
-                judge = None
             else:
-                outcome, checks = run_deterministic_scorer(case, evidence)
-                judge = None
-                if outcome.status == OutcomeStatus.PASS and case.judge:
-                    judged = (judge_runner or JudgeRunner()).judge(judge_prompt(case, evidence))
-                    judge = {
-                        "verdict": judged.verdict,
-                        "rationale": judged.rationale,
-                        "status": judged.outcome.status.value,
-                        "reason": judged.outcome.reason.value,
-                    }
-                    if judged.outcome.status != OutcomeStatus.PASS:
-                        outcome = judged.outcome
-            cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir, judge_config=judge_config)
+                outcome, deterministic_checks = score_case(case, evidence)
+            cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir)
             result = {
                 "case_id": case.id,
                 "case_name": case.name,
                 "case_description": case.description,
                 "user_input": case.user_input,
                 "ground_truth": list(case.ground_truth),
+                "forbidden_behavior": list(case.forbidden_behavior),
                 "target_id": runner.id,
                 "status": outcome.status.value,
                 "reason": outcome.reason.value,
@@ -196,20 +179,24 @@ def execute_case_target(
                 "changed_files": list(changed_files),
                 "diff": diff,
                 "final_response": target_evidence.final_response,
-                "deterministic_checks": list(checks),
                 "harness_validation": [item.__dict__ for item in validation],
-                "judge": judge,
+                "deterministic_checks": list(deterministic_checks) if 'deterministic_checks' in locals() else [],
                 "workspace": {"path": str(workspace.path), "fixture": case.fixture},
                 "target_usage": target_evidence.target_usage,
                 "normalized_evidence": {
                     "final_response": target_evidence.final_response,
-                    "agent_command_events": list(target_evidence.agent_command_events[:20]),
+                    "timeline": compact_actions(target_evidence.agent_command_events, target_evidence.agent_tool_events),
+                    "agent_command_events": list(target_evidence.agent_command_events[:50]),
+                    "agent_tool_events": list(target_evidence.agent_tool_events[:50]),
+                    "actions": list(target_evidence.agent_actions[:200]),
                     "changed_files": list(changed_files),
+                    "workspace_files": _relevant_workspace_files(evidence.workspace_files, tuple(sorted(evidence.workspace_files))),
                     "parse": dict(target_evidence.parse_diagnostics),
                     "adapter_diagnostics": dict(target_evidence.adapter_diagnostics),
                     "prompt_path": str(prompt.path),
                 },
                 "cache_key": {"digest": cache_key.digest(), **cache_key.__dict__},
+                "score_key": build_score_key(case, cache_key.digest()),
                 "raw_run": {
                     "duration_seconds": raw.duration_seconds,
                     "timed_out": raw.timed_out,
@@ -223,7 +210,7 @@ def execute_case_target(
         try:
             workspace.cleanup()
         except Exception as exc:
-            cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir, judge_config=judge_config)
+            cache_key = build_cache_key(case, runner.agent, prompt, fixtures_dir=fixtures_dir)
             result = result_cell(case=case, runner=runner, outcome=Outcome(OutcomeStatus.HARNESS_ERROR, ReasonCode.CLEANUP, str(exc)), cache_key=cache_key, workspace=str(workspace.path))
     assert result is not None
     return result
@@ -235,13 +222,28 @@ def _target_unavailable(stdout: str, stderr: str) -> bool:
     return any(marker in text for marker in markers)
 
 
-def _has_complete_structured_evidence(case: EvalCase, evidence: NormalizedAgentEvidence) -> bool:
+def _target_unavailable_message(*parts: str) -> str:
+    for part in parts:
+        text = str(part or "").strip()
+        if text and _target_unavailable(text, ""):
+            return text
+    return ""
+
+
+def _target_unavailable_output_only(evidence: NormalizedTargetEvidence, changed_files: tuple[str, ...], diff: str) -> bool:
+    return not changed_files and not diff.strip() and not evidence.agent_command_events
+
+
+def _has_complete_structured_evidence(evidence: NormalizedAgentEvidence) -> bool:
     valid_events = int(evidence.target.parse_diagnostics.get("valid_events") or 0)
     if valid_events <= 0:
         return False
-    if missing_required_evidence(case, evidence):
-        return False
     return bool(evidence.target.final_response.strip() or evidence.diff.strip() or evidence.changed_files)
+
+
+def _relevant_workspace_files(files: Mapping[str, str], wanted: tuple[str, ...]) -> dict[str, str]:
+    selected = wanted or tuple(sorted(files)[:20])
+    return {path: files[path][:12000] for path in selected if path in files}
 
 
 def _readme_evidence(prompt: PromptArtifact) -> dict[str, object]:

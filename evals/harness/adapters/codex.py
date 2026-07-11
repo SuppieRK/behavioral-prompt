@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 from .pi import normalize_jsonish_output
 from ..evidence import NormalizedTargetEvidence, RawAgentRun
@@ -14,7 +15,6 @@ class CodexRunner:
     def __init__(self, agent: CodingAgent):
         self.id = agent.id
         self.agent = agent
-        self.capabilities = agent.capabilities
 
     def build_invocation(self, context: AgentInvocationContext) -> AgentInvocation:
         executable = shutil.which("codex") or "codex"
@@ -39,7 +39,7 @@ class CodexRunner:
         if context.agent.model.reasoning:
             argv.extend(["-c", f'model_reasoning_effort="{context.agent.model.reasoning}"'])
         argv.append(context.user_input)
-        env = {"CODEX_HOME": str(context.workspace_path.parent / "codex-home")}
+        env = {"CODEX_HOME": str(Path.home() / ".codex")}
         return AgentInvocation(
             invocation_id=context.invocation_id,
             case_id=context.case_id,

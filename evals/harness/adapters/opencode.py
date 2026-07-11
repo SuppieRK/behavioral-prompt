@@ -14,7 +14,6 @@ class OpenCodeRunner:
     def __init__(self, agent: CodingAgent):
         self.id = agent.id
         self.agent = agent
-        self.capabilities = agent.capabilities
 
     def build_invocation(self, context: AgentInvocationContext) -> AgentInvocation:
         executable = shutil.which("opencode") or "opencode"
@@ -26,7 +25,6 @@ class OpenCodeRunner:
         argv.append(context.user_input)
         env = {
             "XDG_CONFIG_HOME": str(context.workspace_path.parent / "opencode-config"),
-            "XDG_DATA_HOME": str(context.workspace_path.parent / "opencode-data"),
             "OPENCODE_DISABLE_PLUGINS": "true",
         }
         env_unset = ("OPENCODE_CONFIG", "OPENCODE_CONFIG_CONTENT", "OPENCODE_TUI_CONFIG")

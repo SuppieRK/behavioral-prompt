@@ -20,27 +20,29 @@ def seed_pi_state(root: Path) -> dict[str, object]:
 
 
 def seed_codex_state(root: Path) -> dict[str, object]:
-    source = Path.home() / ".codex"
-    target = root / "codex-home"
-    copied = [name for name in ("auth.json",) if seed_file_if_exists(source / name, target / name)]
-    return {"method": "temporary-codex-home", "path": str(target), "seeded_private_data": copied}
+    home = Path.home() / ".codex"
+    return {
+        "method": "host-codex-auth-ignored-config",
+        "path": str(home),
+        "auth_path": str(home / "auth.json"),
+        "seeded_private_data": [],
+        "host_auth_reused": True,
+        "user_config_ignored": True,
+    }
 
 
 def seed_opencode_state(root: Path) -> dict[str, object]:
     config = root / "opencode-config"
-    data = root / "opencode-data"
     clean_config = config / "opencode" / "opencode.json"
     clean_config.parent.mkdir(parents=True, exist_ok=True)
     clean_config.write_text("{}\n")
-    data.mkdir(parents=True, exist_ok=True)
-    source_data = Path.home() / ".local" / "share" / "opencode"
-    copied_data = [name for name in ("auth.json", "account.json") if seed_file_if_exists(source_data / name, data / "opencode" / name)]
     return {
-        "method": "temporary-opencode-config",
+        "method": "temporary-opencode-config-host-data",
         "config_path": str(config),
-        "data_path": str(data),
-        "seeded_private_data": {"config": [], "data": copied_data},
+        "data_path": str(Path.home() / ".local" / "share" / "opencode"),
+        "seeded_private_data": {"config": [], "data": []},
         "global_config_excluded": True,
+        "host_data_reused": True,
         "external_plugins_disabled": True,
         "sharing": "disabled",
     }
