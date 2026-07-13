@@ -1,25 +1,10 @@
-# Prompt behavior eval configuration.
-# Comments are supported. Override any selection/target value with CLI flags.
-
 prompt:
-  # Artifact under evaluation. For the baseline gate, PROMPT.md must contain:
-  # Challenge first. Test first. Then code.
   candidate: PROMPT.md
 
-selection:
-  # Examples:
-  # case: tf-bug-fix
-  # category: test-first
-  # tag: critical
-  # path: evals/cases/technical-partner/tp-weak-method.md
-  case:
-  category:
-  tag:
-  path:
-  critical:
-
-# Named targets let you quickly switch between coding-agent configurations.
-default_target: local-pi
+default_targets:
+  - local-pi
+  - local-opencode-gpt55
+  - local-codex-gpt55
 
 targets:
   local-pi:
@@ -28,16 +13,7 @@ targets:
     reasoning: medium
     auth: configured
     planning:
-      # Custom Pi extension installed in this target environment.
       tool: todolist
-
-  local-opencode-free:
-    harness: opencode
-    model: opencode/mimo-v2.5-free
-    reasoning: medium
-    auth: configured
-    planning:
-      tool: todowrite
 
   local-opencode-gpt55:
     harness: opencode
@@ -49,84 +25,26 @@ targets:
     agent:
       timeout:
         seconds: 300
-    eval:
-      jobs: 3
 
   local-codex-gpt55:
     harness: codex
     model: gpt-5.5
-    reasoning: medium
+    # Medium repeatedly skipped an existing local helper; high passed the
+    # focused reproducer and the complete target matrix.
+    reasoning: high
     auth: configured
     planning:
       tool: update_plan
     agent:
       timeout:
         seconds: 300
-    eval:
-      jobs: 1
-
-  work-opencode-glm51:
-    harness: opencode
-    model: GLM-5.1
-    reasoning: medium
-    auth: required
-    planning:
-      tool: todowrite
-
-judge:
-  enabled: true
-  backend: docker-model-runner
-  model: docker:ai/qwen3:8B-Q4_K_M
-  timeout:
-    seconds: 180
-  retry:
-    # Retry only transient invocation, connection, timeout, and HTTP 5xx failures.
-    attempts: 3
-    backoff_seconds: 1
 
 agent:
   timeout:
     seconds: 180
 
-# Performance metrics never affect pass/fail scoring. Native token usage is
-# parsed from Pi/OpenCode events; psutil samples each agent/judge process tree.
-metrics:
-  process:
-    enabled: true
-  # Efficiency anomalies are warnings only and never affect behavioral pass/fail.
-  anomalies:
-    enabled: true
-    # Cache reads vary substantially between equivalent runs, so warnings use
-    # uncached input + output tokens instead of aggregate total tokens.
-    uncached_tokens: 15000
-    requests: 12
-    agent_seconds: 60
-
 opencode:
   pure: true
 
-cleanup:
-  residue:
-    enabled: true
-    patterns:
-      - "**/__pycache__"
-      - "**/*.pyc"
-      - ".pytest_cache"
-      - ".mypy_cache"
-      - ".ruff_cache"
-      - ".coverage"
-      - "coverage.xml"
-      - ".DS_Store"
-
-report:
-  # Raw agent stdout/stderr is excluded by default; size metadata is kept.
-  # Set include_raw_output to true only when debugging adapter parsing.
-  include_raw_output: false
-  raw_output_limit: 20000
-
 reports:
-  # evals/reports is gitignored and groups reports by configured target name.
-  # Example: a local-pi run of evals/cases/test-first/tf-bug-fix.md writes to
-  # evals/reports/local-pi/test-first/tf-bug-fix/report.json.
-  # Re-running a case overwrites its previous report.
   dir: evals/reports

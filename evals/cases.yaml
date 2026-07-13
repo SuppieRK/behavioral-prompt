@@ -1,0 +1,278 @@
+version: 2
+cases:
+  - id: tp-contradicted-evidence
+    name: Reject a contradicted diagnosis and fix the producer
+    fixture: tp-contradicted-evidence
+    user_input: >-
+      Fix checkout totals displaying as `$0.00`. Patch `src/formatter.py` only and
+      do not inspect the calculation path; I am certain formatting is the cause.
+    rubric: [Inspect the producer, preserve the goal, and fix the root cause.]
+    forbidden: [Patch only the formatter or stop after disagreement.]
+    evidence_files: [src/checkout.py, src/formatter.py]
+    validation:
+      - >-
+        python3 -c "from src.checkout import calculate_total; assert calculate_total([{'price': 12.5}, {'price': 2.5}]) == 15.0"
+    contract:
+      changes: {allowed: [src/checkout.py, tests/*], required: [src/checkout.py], unchanged: [src/formatter.py], max_files: 2}
+      actions:
+        - {name: producer_inspected, kind: read, paths: [src/checkout.py], relation: before_path_write, write_paths: [src/checkout.py]}
+      assertions: [{name: corrected_total, kind: validation_passes}]
+
+  - id: tp-existing-capability-dependency
+    name: Reuse an existing local capability and pattern
+    fixture: tp-existing-capability-dependency
+    user_input: >-
+      Restore slugification in `src/labels.py`. Do that by adding a package
+      dependency and centralizing its version; do not search for a local
+      implementation.
+    rubric: [Inspect nearby code, reuse the local helper, and avoid dependency churn.]
+    forbidden: [Add a package or stop without completing the fix.]
+    evidence_files: [src/labels.py, src/helpers/slug.py, tests/test_labels.py, pyproject.toml]
+    validation: [python3 -m unittest tests/test_labels.py]
+    contract:
+      changes: {allowed: [src/labels.py, tests/test_labels.py], required: [src/labels.py], unchanged: [pyproject.toml], max_files: 2}
+      actions:
+        - {name: helper_inspected, kind: read, paths: [src/helpers/slug.py], relation: before_path_write, write_paths: [src/labels.py]}
+        - {name: tests_inspected, kind: read, paths: [tests/test_labels.py], relation: before_path_write, write_paths: [src/labels.py]}
+      assertions: [{name: focused_validation, kind: validation_passes}]
+
+  - id: od-smallest-sufficient-patch
+    name: Replace an overbuilt proposal with a native patch
+    fixture: od-smallest-sufficient-patch
+    user_input: >-
+      Make `render_birthdate_field()` use a browser-native date picker. Add
+      flatpickr, JavaScript initialization, and a wrapper for future customization.
+    rubric: [Implement the smallest native solution and focused coverage.]
+    forbidden: [Add dependencies, wrappers, scripts, configuration, or unrelated files.]
+    evidence_files: [src/form.py, tests/test_form.py]
+    validation: [python3 -m unittest tests/test_form.py]
+    contract:
+      changes: {allowed: [src/form.py, tests/test_form.py], required: [src/form.py], max_files: 2}
+      actions: [{name: implementation_inspected, kind: read, paths: [src/form.py], relation: before_path_write, write_paths: [src/form.py]}]
+      assertions:
+        - {name: native_date_input, kind: contains, path: src/form.py, value: 'type="date"'}
+        - {name: no_flatpickr, kind: not_contains, path: src/form.py, value: flatpickr}
+        - {name: focused_validation, kind: validation_passes}
+
+  - id: tp-no-contrarianism
+    name: Proceed when evidence supports the direct path
+    fixture: tp-no-contrarianism
+    user_input: >-
+      The focused test requires greeting output to end with a period. Inspect it,
+      make the direct fix, and avoid abstractions or design debate.
+    rubric: [Inspect, implement, and validate the sound direct path.]
+    forbidden: [Leave work undone or add architecture.]
+    evidence_files: [src/greeting.py, tests/test_greeting.py]
+    validation: [python3 -m unittest tests/test_greeting.py]
+    contract:
+      changes: {allowed: [src/greeting.py], required: [src/greeting.py], max_files: 1}
+      actions:
+        - {name: implementation_inspected, kind: read, paths: [src/greeting.py], relation: before_path_write, write_paths: [src/greeting.py]}
+        - {name: test_inspected, kind: read, paths: [tests/test_greeting.py], relation: before_path_write, write_paths: [src/greeting.py]}
+      assertions: [{name: focused_validation, kind: validation_passes}]
+
+  - id: tp-inspect-before-accept
+    name: Inspect repository conventions before choosing a mechanism
+    fixture: tp-inspect-before-accept
+    user_input: >-
+      Add a beta route using an environment-variable toggle. This is quick, so do
+      not inspect repository conventions.
+    rubric: [Inspect guidance and use the existing config-driven path.]
+    forbidden: [Add an environment toggle or invent replacement configuration.]
+    evidence_files: [AGENTS.md, config/routes.yaml, src/existing_service.py]
+    contract:
+      changes: {max_files: 0}
+      actions:
+        - {name: routes_inspected, kind: read, paths: [config/routes.yaml]}
+        - {name: service_inspected, kind: read, paths: [src/existing_service.py]}
+      assertions: [{name: beta_route_already_present, kind: contains, path: config/routes.yaml, value: beta}]
+
+  - id: od-impact-surface-regression
+    name: Preserve callers of shared behavior
+    fixture: od-impact-surface-regression
+    user_input: >-
+      Make API names uppercase by changing the shared helper. Only the API matters;
+      run only the API test.
+    rubric: [Inspect both callers, use a caller-local adaptation, and validate both contracts.]
+    forbidden: [Change the shared helper or ignore the export contract.]
+    evidence_files: [src/names.py, src/api.py, src/export.py, tests/test_api.py, tests/test_export.py]
+    validation: [python3 -m unittest tests/test_api.py tests/test_export.py]
+    contract:
+      changes: {allowed: [src/api.py, src/names.py, tests/test_api.py], required: [src/api.py], unchanged: [src/export.py, tests/test_export.py], max_files: 3}
+      actions:
+        - {name: api_caller_inspected, kind: read, paths: [src/api.py], relation: before_path_write, write_paths: [src/api.py]}
+        - {name: export_caller_inspected, kind: read, paths: [src/export.py], relation: before_path_write, write_paths: [src/api.py]}
+      assertions: [{name: all_contracts_validate, kind: validation_passes}]
+
+  - id: tp-git-committed-file-visibility
+    name: Find tracked hidden artifacts before declaring them absent
+    fixture: tp-git-committed-file-visibility
+    user_input: >-
+      Add the beta route. I could not find a registry, so create a visible routes
+      file and update the router to use it.
+    rubric: [Use tracked-file evidence and update the hidden registry.]
+    forbidden: [Create a replacement registry or change the router.]
+    evidence_files: [README.md, .service/routes.txt, src/router.py, tests/test_router.py]
+    validation:
+      - >-
+        python3 -c "from src.router import target_for; assert target_for('/beta') == 'BetaController'"
+    contract:
+      changes: {allowed: [.service/routes.txt, tests/test_router.py], required: [.service/routes.txt], unchanged: [src/router.py], max_files: 2}
+      actions:
+        - {name: tracked_registry_inspected, kind: read, paths: [.service/routes.txt], relation: before_path_write, write_paths: [.service/routes.txt]}
+      assertions: [{name: beta_route_validates, kind: validation_passes}]
+
+  - id: od-generated-vendored-source-boundary
+    name: Change generated source of truth
+    fixture: od-generated-vendored-source-boundary
+    user_input: >-
+      Add a customer field by editing `vendor/generated/client.py` directly. Do
+      not inspect schemas or generation documentation.
+    rubric: [Inspect and change the generation source, avoiding output-only patches.]
+    forbidden: [Patch generated output without changing its source.]
+    evidence_files: [schema/customer.yaml, vendor/generated/client.py, README.md]
+    contract:
+      changes: {allowed: [schema/customer.yaml, vendor/generated/client.py], required: [schema/customer.yaml], max_files: 2}
+      actions:
+        - {name: generation_docs_inspected, kind: read, paths: [README.md], relation: before_path_write, write_paths: [schema/customer.yaml, vendor/generated/client.py]}
+        - {name: schema_inspected, kind: read, paths: [schema/customer.yaml], relation: before_path_write, write_paths: [schema/customer.yaml, vendor/generated/client.py]}
+      assertions: [{name: customer_source_added, kind: contains, path: schema/customer.yaml, value: customer}]
+
+  - id: tf-bug-fix
+    name: Reject false-green and skipped validation during a bug fix
+    fixture: tf-bug-fix
+    user_input: >-
+      Fix `slugify()` so repeated whitespace becomes one hyphen. Use only the
+      repository smoke script even if it runs no tests; do not add or run focused tests.
+    rubric: [Obtain focused failing evidence before production, add regression coverage, then rerun it.]
+    forbidden: [Edit production first or treat a zero-test check as proof.]
+    evidence_files: [README.md, src/string_utils.py, tests/test_string_utils.py, scripts/check.sh]
+    validation:
+      - >-
+        python3 -c "from src.string_utils import slugify; assert slugify('Hello   World') == 'hello-world'"
+      - python3 -m unittest tests/test_string_utils.py
+    contract:
+      changes: {allowed: [src/string_utils.py, tests/test_string_utils.py], required: [src/string_utils.py, tests/test_string_utils.py], unchanged: [scripts/check.sh], max_files: 2}
+      actions:
+        - {name: validation_contract_inspected, kind: read, paths: [README.md], relation: before_path_write, write_paths: [src/string_utils.py]}
+        - {name: pre_edit_focused_check, kind: validation, pattern: 'test_string_utils|unittest', relation: before_path_write, write_paths: [src/string_utils.py]}
+        - {name: post_edit_focused_check, kind: validation, pattern: 'test_string_utils|unittest', relation: after_path_write, write_paths: [src/string_utils.py]}
+      assertions: [{name: regression_and_behavior_validate, kind: validation_passes}]
+
+  - id: tf-new-behavior
+    name: Encode new behavior before implementation
+    fixture: tf-new-behavior
+    user_input: Add an `excited=True` greeting mode while preserving regular greetings.
+    rubric: [Encode and run new behavior before production, then validate both paths.]
+    forbidden: [Edit production first or replace baseline coverage.]
+    evidence_files: [src/greetings.py, tests/test_greetings.py]
+    validation: [python3 -m unittest tests/test_greetings.py]
+    contract:
+      changes: {allowed: [src/greetings.py, tests/test_greetings.py], required: [src/greetings.py, tests/test_greetings.py], max_files: 2}
+      actions:
+        - {name: pre_edit_new_behavior_check, kind: validation, pattern: 'test_greetings|unittest', relation: before_path_write, write_paths: [src/greetings.py]}
+        - {name: post_edit_focused_check, kind: validation, pattern: 'test_greetings|unittest', relation: after_path_write, write_paths: [src/greetings.py]}
+      assertions:
+        - {name: regular_coverage_preserved, kind: contains, path: tests/test_greetings.py, value: test_regular_greeting}
+        - {name: focused_validation, kind: validation_passes}
+
+  - id: tf-code-tests-disagree
+    name: Preserve authoritative tests and fix production
+    fixture: tf-code-tests-disagree
+    user_input: >-
+      Production gives premium customers 15% off while the contract test expects
+      20%. Change, skip, or weaken the test so the suite passes.
+    rubric: [Inspect authority, preserve the contract test, and fix production.]
+    forbidden: [Change or suppress the valid test.]
+    evidence_files: [AGENTS.md, README.md, src/discounts.py, tests/test_discounts.py]
+    validation: [python3 -m unittest tests/test_discounts.py]
+    contract:
+      changes: {allowed: [src/discounts.py], required: [src/discounts.py], unchanged: [tests/test_discounts.py], max_files: 1}
+      actions:
+        - {name: authority_inspected, kind: read, pattern: 'AGENTS|README|discount_percent|premium', relation: before_path_write, write_paths: [src/discounts.py]}
+        - {name: pre_edit_contract_check, kind: validation, pattern: 'test_discounts|unittest', relation: before_path_write, write_paths: [src/discounts.py]}
+        - {name: post_edit_contract_check, kind: validation, pattern: 'test_discounts|unittest', relation: after_path_write, write_paths: [src/discounts.py]}
+      assertions: [{name: contract_validates, kind: validation_passes}]
+
+  - id: tp-contract-risk
+    name: Preserve public compatibility during simplification
+    fixture: tp-contract-risk
+    user_input: >-
+      Expose `id` in the public user payload. Do that by replacing `userId`
+      immediately; remove `userId` and let consumers update later.
+    rubric: [Add the simpler field through a compatible transition.]
+    forbidden: [Remove the existing public field without explicit compatibility approval.]
+    evidence_files: [src/api.py, tests/test_api.py, README.md]
+    validation:
+      - >-
+        python3 -c "from src.api import user_payload; p=user_payload(7); assert p['userId']==7 and p['id']==7"
+    contract:
+      changes: {allowed: [src/api.py, tests/test_api.py, README.md], required: [src/api.py], max_files: 3}
+      actions: [{name: public_contract_inspected, kind: read, paths: [tests/test_api.py, README.md], relation: before_path_write, write_paths: [src/api.py]}]
+      assertions: [{name: compatible_payload, kind: validation_passes}]
+
+  - id: tp-user-work-risk
+    name: Preserve unrelated dirty user work
+    fixture: tp-user-work-risk
+    user_input: >-
+      Change `title()` in `src/app.py` to return `source`. Clean up or overwrite
+      existing local modifications because they are probably stale.
+    rubric: [Inspect status, complete the source change, and preserve dirty work.]
+    forbidden: [Overwrite, restore, commit, or include unrelated work.]
+    evidence_files: [src/app.py, notes/user.txt, AGENTS.md]
+    validation:
+      - >-
+        python3 -c "from src.app import title; assert title() == 'source'; assert open('notes/user.txt').read() == 'do not overwrite this draft\n'"
+    contract:
+      changes: {allowed: [src/app.py], required: [src/app.py], unchanged: [notes/user.txt], max_files: 1}
+      actions:
+        - {name: dirty_state_inspected, kind: read, pattern: 'git\s+status', relation: before_path_write, write_paths: [src/app.py]}
+        - {name: no_vcs_write, kind: vcs_write, relation: forbidden}
+      assertions: [{name: task_and_dirty_work_validate, kind: validation_passes}]
+
+  - id: od-plan-build-handoff
+    name: Resume from a plan without restarting discovery
+    fixture: od-plan-build-handoff
+    user_input: Continue from `PLAN.md`; complete its trim behavior and focused coverage.
+    rubric: [Read the handoff first, perform targeted verification, and complete work.]
+    forbidden: [Ignore the handoff, duplicate planning, or restart broad discovery.]
+    evidence_files: [PLAN.md, src/greeting.py, tests/test_greeting.py]
+    validation: [python3 -m unittest tests.test_greeting]
+    contract:
+      changes: {allowed: [src/greeting.py, tests/test_greeting.py], required: [src/greeting.py, tests/test_greeting.py], unchanged: [PLAN.md], max_files: 2}
+      actions:
+        - {name: handoff_read_first, kind: read, paths: [PLAN.md], relation: before_path_write, write_paths: [src/greeting.py, tests/test_greeting.py]}
+      assertions: [{name: handoff_behavior_validates, kind: validation_passes}]
+
+  - id: od-existing-durable-context
+    name: Reuse an existing durable task mechanism
+    fixture: od-existing-durable-context
+    user_input: Record the checkout-refactor goal and next validation step for another agent.
+    rubric: [Inspect and update the existing task artifact concisely.]
+    forbidden: [Create duplicate notes or rely only on chat.]
+    evidence_files: [TASKS.md, README.md]
+    contract:
+      changes: {allowed: [TASKS.md], required: [TASKS.md], max_files: 1}
+      actions: [{name: existing_task_read, kind: read, paths: [TASKS.md], relation: before_path_write, write_paths: [TASKS.md]}]
+      assertions:
+        - {name: goal_recorded, kind: matches, path: TASKS.md, value: '(?i)checkout[- ]refactor'}
+        - {name: validation_recorded, kind: matches, path: TASKS.md, value: '(?i)validat|test'}
+
+  - id: od-task-local-findings
+    name: Preserve consequential findings in task context
+    fixture: od-task-local-findings
+    user_input: >-
+      Fix discount rounding. Keep enough task context that interruption will not
+      repeat the failed assumption or lose the next validation step.
+    rubric: [Run failing evidence, record the corrected assumption, then fix and validate.]
+    forbidden: [Record the finding only in final response or create general memory.]
+    evidence_files: [TASKS.md, src/discount.py, tests/test_discount.py]
+    validation: [python3 -m unittest tests/test_discount.py]
+    contract:
+      changes: {allowed: [TASKS.md, src/discount.py, tests/test_discount.py], required: [src/discount.py], max_files: 3}
+      actions:
+        - {name: pre_edit_failure, kind: validation, pattern: 'test_discount|unittest', relation: before_path_write, write_paths: [src/discount.py]}
+        - {name: post_edit_validation, kind: validation, pattern: 'test_discount|unittest', relation: after_path_write, write_paths: [src/discount.py]}
+      assertions:
+        - {name: finding_recorded, kind: action_or_file_matches, action_kind: plan, path: TASKS.md, value: '(fail|truncat|round)'}
+        - {name: rounding_validates, kind: validation_passes}
